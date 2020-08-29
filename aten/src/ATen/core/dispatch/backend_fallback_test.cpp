@@ -6,6 +6,8 @@
 #include <ATen/core/op_registration/op_registration.h>
 #include <torch/library.h>
 
+#include <ATen/ConjugateFallback.h>
+
 using namespace at;
 
 namespace {
@@ -77,6 +79,24 @@ void generic_wrapper_fallback(const c10::OperatorHandle& op, torch::jit::Stack* 
       torch::jit::push(*stack, std::move(rets[i]));
     }
   }
+}
+
+TEST(BackendFallbackTest, ConjugateTest) {
+  auto m = MAKE_TORCH_LIBRARY_IMPL(_, Conjugate);
+  // m.fallback(torch::CppFunction::makeFromBoxedFunction<&conjugateFallback>());
+
+  // c10::impl::IncludeDispatchKeyGuard guard(DispatchKey::Conjugate);
+
+  Tensor a = ones({5, 5}, kDouble);
+  Tensor b = ones({5, 5}, kDouble);
+  Tensor c = a.conj() + b;
+  std::cout << "c: " << c;
+  Tensor d = a.conj_view() + b;
+  // std::cout << "d_tmp: " << d_tmp;
+  // Tensor d = d_tmp + b;
+  std::cout << "d: " << d;
+  // ASSERT_TRUE(c == d);
+  // ASSERT_EQ(c, d);
 }
 
 TEST(BackendFallbackTest, TestBackendFallbackWithMode) {

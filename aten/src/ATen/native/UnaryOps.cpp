@@ -205,6 +205,25 @@ Tensor imag(const Tensor& self) {
 Tensor& conj_out(Tensor& result, const Tensor& self) { return unary_op_impl_out(result, self, conj_stub); }
 Tensor conj(const Tensor& self) { return unary_op_impl(self, at::conj_out); }
 
+Tensor conj_materialize(const Tensor& self) {
+  // this function assumes that the tensor input has it's conjugate bit set
+  Tensor self_conjugated = self.conj();
+  self_conjugated.set_conjugate(false);
+  return self_conjugated;
+}
+
+Tensor conj_view(const Tensor& self) {
+ Tensor self_;
+  auto impl = c10::make_intrusive<TensorImpl>(
+      Storage(self.storage()), self.key_set(), self.dtype());
+  impl->set_storage_offset(self.storage_offset());
+  impl->set_sizes_and_strides(self.sizes(), self.strides());
+  impl->set_conjugate(!self.is_conjugate());
+  self_ = Tensor(std::move(impl));
+  namedinference::propagate_names(self_, self);
+  return self_;
+}
+
 Tensor& bitwise_not_out(Tensor& result, const Tensor& self) { return unary_op_impl_out(result, self, bitwise_not_stub); }
 Tensor bitwise_not(const Tensor& self) { return unary_op_impl(self, at::bitwise_not_out); }
 Tensor& bitwise_not_(Tensor& self) { return unary_op_impl_(self, at::bitwise_not_out); }
