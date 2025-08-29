@@ -7,8 +7,9 @@
 #include <torch/csrc/jit/passes/create_functional_graphs.h>
 #include <torch/csrc/jit/passes/utils/memory_dag.h>
 
-namespace torch {
-namespace jit {
+namespace torch::jit {
+
+class ValueAndMemoryLocationSet;
 
 /**
  * Alias analysis pass.
@@ -25,11 +26,11 @@ namespace jit {
  * is considered safe.
  *
  * There is a special alias set called the "wildcard set", which indicates that
- * we're not sure what this value may alias. To be conservative, we consider
- * the wildcard alias set as potentially aliasing any value within the same
- * type class. Whenever a value becomes contained by another value, such as
- * when a Tensor is appended to a List[Tensor], the contained element becomes
- * part of the wildcard set.
+ * we're not sure what this value may alias. To be conservative, we consider the
+ * wildcard alias set as potentially aliasing any other wildcard value within
+ * the same type class. Whenever a value becomes contained by another value,
+ * such as when a Tensor is appended to a List[Tensor], the contained element
+ * becomes part of the wildcard set.
  *
  * Values that contain other mutable types, such as List[Tensor], are
  * initialized as containing the Wildcard set for all contained mutable types.
@@ -47,7 +48,7 @@ namespace jit {
  *
  * `descendFunctionCalls` - recursively analyze function and method calls
  * instead of conservative analysis. Generally analysis should be done after
- * inlining so the implmentation for recursive analysis is unoptimized.
+ * inlining so the implementation for recursive analysis is unoptimized.
  */
 class AliasDb {
  public:
@@ -70,6 +71,12 @@ class AliasDb {
   // Does `n` write to an alias of one of the values in `vs`?
   // if `recurseBlocks` is true, consider writes on the nodes in `n`s sub-blocks
   TORCH_API bool writesToAlias(Node* n, const ValueSet& vs) const;
+
+  // Does `n` write to any of the values in `vls`?
+  TORCH_API bool writesToAlias(Node* n, const ValueAndMemoryLocationSet& vls)
+      const;
+
+  TORCH_API ValueAndMemoryLocationSet getValueAndMemoryLocationSet() const;
 
   // Does `a` and `b` potentially share a memory location or do either
   // hold in memory any element that exists in the other
@@ -95,7 +102,7 @@ class AliasDb {
   // Do any nodes write to an alias set output by `n`?
   TORCH_API bool hasOutputWriters(const Node* n) const;
 
-  // Do any nodes write to an alias set inputed/outputed by `n`?
+  // Do any nodes write to an alias set inputted/outputted by `n`?
   TORCH_API bool hasWriters(const Node* n) const;
 
   // Do any nodes write to `v`s memory location?
@@ -171,6 +178,7 @@ class AliasDb {
   void enablePreciseTupleContainerAnalysis();
 
   friend struct MutationRemover;
+  friend class ValueAndMemoryLocationSet;
 
  private:
   // Helper for topologically-safe node moves.
@@ -198,12 +206,13 @@ class AliasDb {
   // if `recurseBlocks` is true, gather reads on the nodes in `n`s sub-blocks
   MemoryLocations getReads(Node* n) const;
   void getReadsImpl(Node* n, MemoryLocations& ret) const;
+  MemoryLocations getMemoryLocations(Value* v) const;
 
   /**
    * Wildcard methods
    */
   // Register `v` as a wildcard value.
-  c10::optional<Element*> setWildcard(const Value* v);
+  std::optional<Element*> setWildcard(const Value* v);
 
   // Is this a value which will not alias?
   bool nonAliasingValue(const Value* elem) const;
@@ -217,7 +226,7 @@ class AliasDb {
   void analyzeImpl(Node* node);
   void analyzeIf(Node* node);
   void analyzeLoop(Node* node);
-  void analyzeSubgraph(Node* node, std::shared_ptr<Graph> subgraph);
+  void analyzeSubgraph(Node* node, const std::shared_ptr<Graph>& subgraph);
   void analyzeSubgraph(Node* node);
   void analyzeCreator(Node* node);
   void analyzeExtractor(Node* node);
@@ -225,6 +234,8 @@ class AliasDb {
   void analyzeBroadcastingChunk(Node* node);
   void analyzeFork(Node* node);
   void analyzeWait(Node* node);
+  void analyzeAwaitable(Node* node);
+  void analyzeAwaitableWait(Node* node);
   void analyzeRpcAsync(Node* node);
   void analyzeBatchNorm(Node* node);
   void analyzeInstanceNorm(Node* node);
@@ -272,7 +283,7 @@ class AliasDb {
   // All wildcard Elements (one for each unique mutable type)
   ska::flat_hash_map<TypePtr, Element*, HashType, EqualType> wildcardIndex_;
   Element* getWildcard(const TypePtr& type) const;
-  c10::optional<Element*> tryGetOrCreateWildcard(const TypePtr& type);
+  std::optional<Element*> tryGetOrCreateWildcard(const TypePtr& type);
   void addContainedTypesToFreshElement(
       Element* container_elem,
       const AliasTypeSet& mut_types);
@@ -299,9 +310,9 @@ class AliasDb {
 
   // Map of nodes to the memory locations that they write to
   using TWriteIndex = ska::flat_hash_map<Node*, MemoryLocations>;
-  c10::optional<TWriteIndex> writeIndex_;
+  std::optional<TWriteIndex> writeIndex_;
   // Collection of all memory locations that are written to.
-  c10::optional<MemoryLocations> writtenToLocationsIndex_;
+  std::optional<MemoryLocations> writtenToLocationsIndex_;
   void buildWrittenToLocationsIndex();
 
   std::unordered_set<const Value*> wildcards_;
@@ -314,7 +325,39 @@ class AliasDb {
 // Helper check that invariants over AliasDb are maintained.
 // Useful if you are using the AliasDb mutation API and want to check you did
 // the right thing.
-void Lint(const AliasDb* db);
+TORCH_API void Lint(const AliasDb* db);
 
-} // namespace jit
-} // namespace torch
+/**
+ * ValueAndMemoryLocationSet
+ *
+ * A insert-only set of values which also maintains a MemoryLocations bitset
+ * of the memory locations that the values alias. It is insert-only. It
+ * should be constructed by calling aliasDb.getValueAndMemoryLocationSet().
+ *
+ * WARNING:
+ *  * The AliasDb must not be mutated after construction of a
+ *    ValueAndMemoryLocationsSet, or else the MemoryLocations stored in the
+ *    ValueAndMemoryLocationSet will no longer be accurate.
+ *  * A ValueAndMemoryLocationsSet is tied to an instance of AliasDb but
+ *    does not own the AliasDb. It is the user's responsibility to ensure
+ *    that the AliasDb outlives the ValuesAndMemoryLocationsSet.
+ *
+ * The use case for this is to be able to implement writesToAlias
+ * more efficiently for a set of values.
+ */
+class ValueAndMemoryLocationSet {
+ public:
+  TORCH_API void insert(Value* v);
+  TORCH_API ValueSet& getValueSet();
+
+  friend class AliasDb;
+
+ private:
+  ValueAndMemoryLocationSet(const AliasDb* db) : aliasDb_(db) {}
+
+  const AliasDb* aliasDb_;
+  ValueSet valueSet_;
+  MemoryLocations memoryLocations_;
+};
+
+} // namespace torch::jit

@@ -13,12 +13,12 @@
 #include <ATen/native/cuda/Loops.cuh>
 #include <ATen/native/cuda/Math.cuh>
 #include <ATen/NumericUtils.h>
+#include <ATen/OpMathType.h>
 #include <c10/cuda/CUDAMathCompat.h>
 #include <c10/core/Scalar.h>
 #include <c10/util/complex.h>
 
-namespace at {
-namespace native {
+namespace at::native {
 
 void bitwise_not_kernel_cuda(TensorIteratorBase& iter) {
   if (iter.dtype() == ScalarType::Bool) {
@@ -34,7 +34,7 @@ void bitwise_not_kernel_cuda(TensorIteratorBase& iter) {
   }
 }
 
-const char exp_name[] = "exp_kernel";
+constexpr char exp_name[] = "exp_kernel";
 void exp_kernel_cuda(TensorIteratorBase& iter) {
   auto common_dtype = iter.common_dtype();
   if (at::isComplexType(common_dtype)) {
@@ -44,7 +44,7 @@ void exp_kernel_cuda(TensorIteratorBase& iter) {
           T exp_kernel(T x) {
             return std::exp(x);
       }); // exp_string
-      AT_DISPATCH_COMPLEX_TYPES(common_dtype, "exp_cuda", [&]() {
+      AT_DISPATCH_COMPLEX_TYPES_AND(kComplexHalf, common_dtype, "exp_cuda", [&]() {
           jitted_gpu_kernel<
               /*name=*/exp_name,
               /*return_dtype=*/scalar_t,
@@ -52,9 +52,10 @@ void exp_kernel_cuda(TensorIteratorBase& iter) {
               /*arity=*/1>(iter, exp_string);
       });
     #else
-      AT_DISPATCH_COMPLEX_TYPES(common_dtype, "exp_cuda", [&]() {
+      AT_DISPATCH_COMPLEX_TYPES_AND(kComplexHalf, common_dtype, "exp_cuda", [&]() {
         gpu_kernel(iter, []GPU_LAMBDA(scalar_t a) -> scalar_t {
-          return std::exp(a);
+          using opmath_t = at::opmath_type<scalar_t>;
+          return std::exp(static_cast<opmath_t>(a));
         });
       });
     #endif
@@ -68,7 +69,7 @@ void exp_kernel_cuda(TensorIteratorBase& iter) {
 }
 
 void expm1_kernel_cuda(TensorIteratorBase& iter) {
-  AT_DISPATCH_FLOATING_TYPES_AND2(
+  AT_DISPATCH_FLOATING_AND_COMPLEX_TYPES_AND2(
       ScalarType::BFloat16, ScalarType::Half,
       iter.common_dtype(), "expm1_cuda",
       [&]() {
@@ -91,7 +92,7 @@ C10_HOST_DEVICE static inline c10::complex<T> rsqrt_wrapper(c10::complex<T> v) {
   return one / ::sqrt(v);
 }
 
-const char rsqrt_name[] = "rsqrt_kernel";
+constexpr char rsqrt_name[] = "rsqrt_kernel";
 void rsqrt_kernel_cuda(TensorIteratorBase& iter) {
   auto common_dtype = iter.common_dtype();
   if (at::isComplexType(common_dtype)) {
@@ -102,7 +103,7 @@ void rsqrt_kernel_cuda(TensorIteratorBase& iter) {
             const T one = T{1};
             return one / std::sqrt(x);
       }); // rsqrt_string
-      AT_DISPATCH_COMPLEX_TYPES(common_dtype, "rsqrt_cuda", [&]() {
+      AT_DISPATCH_COMPLEX_TYPES_AND(kComplexHalf, common_dtype, "rsqrt_cuda", [&]() {
           jitted_gpu_kernel<
               /*name=*/rsqrt_name,
               /*return_dtype=*/scalar_t,
@@ -110,10 +111,10 @@ void rsqrt_kernel_cuda(TensorIteratorBase& iter) {
               /*arity=*/1>(iter, rsqrt_string);
       });
     #else
-      AT_DISPATCH_COMPLEX_TYPES(common_dtype, "rsqrt_cuda", [&]() {
+      AT_DISPATCH_COMPLEX_TYPES_AND(kComplexHalf, common_dtype, "rsqrt_cuda", [&]() {
         gpu_kernel(iter, []GPU_LAMBDA(scalar_t a) -> scalar_t {
-          // In CUDA, ::rsqrt is overloaded for float and at::Half here is implicitly cast to float.
-          return rsqrt_wrapper(a);
+          using opmath_t = at::opmath_type<scalar_t>;
+          return rsqrt_wrapper(static_cast<opmath_t>(a));
         });
       });
     #endif
@@ -130,7 +131,7 @@ void rsqrt_kernel_cuda(TensorIteratorBase& iter) {
   }
 }
 
-const char sqrt_name[] = "sqrt_kernel";
+constexpr char sqrt_name[] = "sqrt_kernel";
 void sqrt_kernel_cuda(TensorIteratorBase& iter) {
   auto common_dtype = iter.common_dtype();
   if (at::isComplexType(common_dtype)) {
@@ -140,7 +141,7 @@ void sqrt_kernel_cuda(TensorIteratorBase& iter) {
           T sqrt_kernel(T x) {
             return std::sqrt(x);
       }); // sqrt_string
-      AT_DISPATCH_COMPLEX_TYPES(common_dtype, "sqrt_cuda", [&]() {
+      AT_DISPATCH_COMPLEX_TYPES_AND(kComplexHalf, common_dtype, "sqrt_cuda", [&]() {
           jitted_gpu_kernel<
               /*name=*/sqrt_name,
               /*return_dtype=*/scalar_t,
@@ -148,9 +149,10 @@ void sqrt_kernel_cuda(TensorIteratorBase& iter) {
               /*arity=*/1>(iter, sqrt_string);
       });
     #else
-      AT_DISPATCH_COMPLEX_TYPES(common_dtype, "sqrt_cuda", [&]() {
+      AT_DISPATCH_COMPLEX_TYPES_AND(kComplexHalf, common_dtype, "sqrt_cuda", [&]() {
         gpu_kernel(iter, []GPU_LAMBDA(scalar_t a) -> scalar_t {
-          return std::sqrt(a);
+          using opmath_t = at::opmath_type<scalar_t>;
+          return ::sqrt(static_cast<opmath_t>(a));
         });
       });
     #endif
@@ -206,34 +208,61 @@ void clamp_max_kernel_cuda(TensorIteratorBase& iter, const Scalar& max_value) {
   });
 }
 
+template<typename scalar_t>
+C10_HOST_DEVICE static inline scalar_t _nan_to_num_replace(scalar_t a, scalar_t nan_replacement, scalar_t pos_inf_replacement, scalar_t neg_inf_replacement) {
+  return at::_isnan(a)
+    ? nan_replacement
+    : (a == std::numeric_limits<scalar_t>::infinity()
+      ? pos_inf_replacement
+      : (a == -std::numeric_limits<scalar_t>::infinity()
+        ? neg_inf_replacement
+        : a));
+}
+
 void nan_to_num_kernel_cuda(
     TensorIteratorBase& iter,
-    c10::optional<double> nan,
-    c10::optional<double> pos_inf,
-    c10::optional<double> neg_inf) {
-  AT_DISPATCH_FLOATING_TYPES_AND2(kHalf, kBFloat16, iter.dtype(), "nan_to_num_cuda", [&]() {
-    scalar_t nan_replacement = static_cast<scalar_t>(nan.value_or(0.));
-    scalar_t pos_inf_replacement = pos_inf.has_value()
-        ? static_cast<scalar_t>(pos_inf.value())
-        : std::numeric_limits<scalar_t>::max();
-    scalar_t neg_inf_replacement = neg_inf.has_value()
-        ? static_cast<scalar_t>(neg_inf.value())
-        : std::numeric_limits<scalar_t>::lowest();
-    gpu_kernel(iter, [=] GPU_LAMBDA(scalar_t a) -> scalar_t {
-      return (
-          at::_isnan(a)
-              ? nan_replacement
-              : (a == std::numeric_limits<scalar_t>::infinity()
-                     ? pos_inf_replacement
-                     : (a == -std::numeric_limits<scalar_t>::infinity()
-                            ? neg_inf_replacement
-                            : a)));
+    std::optional<double> nan,
+    std::optional<double> pos_inf,
+    std::optional<double> neg_inf) {
+  if (isComplexType(iter.dtype())) {
+    AT_DISPATCH_COMPLEX_TYPES(iter.dtype(), "nan_to_num", [&]() {
+      using value_t = scalar_t::value_type;
+      value_t nan_replacement = static_cast<value_t>(nan.value_or(0.));
+      value_t pos_inf_replacement = pos_inf.has_value()
+          ? static_cast<value_t>(pos_inf.value())
+          : std::numeric_limits<value_t>::max();
+      value_t neg_inf_replacement = neg_inf.has_value()
+          ? static_cast<value_t>(neg_inf.value())
+          : std::numeric_limits<value_t>::lowest();
+
+      gpu_kernel(iter, [=] GPU_LAMBDA(scalar_t a) -> scalar_t {
+        value_t res_real = _nan_to_num_replace(
+          a.real(), nan_replacement, pos_inf_replacement, neg_inf_replacement);
+        value_t res_imag = _nan_to_num_replace(
+          a.imag(), nan_replacement, pos_inf_replacement, neg_inf_replacement);
+        return scalar_t(res_real, res_imag);
+      });
     });
-  });
+  } else {
+    AT_DISPATCH_FLOATING_TYPES_AND2(kHalf, kBFloat16, iter.dtype(), "nan_to_num_cuda", [&]() {
+      scalar_t nan_replacement = static_cast<scalar_t>(nan.value_or(0.));
+      scalar_t pos_inf_replacement = pos_inf.has_value()
+          ? static_cast<scalar_t>(pos_inf.value())
+          : std::numeric_limits<scalar_t>::max();
+      scalar_t neg_inf_replacement = neg_inf.has_value()
+          ? static_cast<scalar_t>(neg_inf.value())
+          : std::numeric_limits<scalar_t>::lowest();
+
+      gpu_kernel(iter, [=] GPU_LAMBDA(scalar_t a) -> scalar_t {
+          return _nan_to_num_replace(
+            a, nan_replacement, pos_inf_replacement, neg_inf_replacement);
+      });
+    });
+  }
 }
 
 void frexp_kernel_cuda(TensorIteratorBase& iter) {
-  AT_DISPATCH_FLOATING_TYPES_AND(ScalarType::Half,
+  AT_DISPATCH_FLOATING_TYPES_AND2(kHalf, kBFloat16,
     // The iter.dtype() here is the dtype of mantissa output.
     // It's a floating point type and must be the same as the input's dtype.
     iter.dtype(),
@@ -246,13 +275,12 @@ void frexp_kernel_cuda(TensorIteratorBase& iter) {
   });
 }
 
-REGISTER_DISPATCH(bitwise_not_stub, &bitwise_not_kernel_cuda);
-REGISTER_DISPATCH(exp_stub, &exp_kernel_cuda);
-REGISTER_DISPATCH(expm1_stub, &expm1_kernel_cuda);
-REGISTER_DISPATCH(rsqrt_stub, &rsqrt_kernel_cuda);
-REGISTER_DISPATCH(sqrt_stub, &sqrt_kernel_cuda);
-REGISTER_DISPATCH(nan_to_num_stub, &nan_to_num_kernel_cuda);
-REGISTER_DISPATCH(frexp_stub, &frexp_kernel_cuda);
+REGISTER_DISPATCH(bitwise_not_stub, &bitwise_not_kernel_cuda)
+REGISTER_DISPATCH(exp_stub, &exp_kernel_cuda)
+REGISTER_DISPATCH(expm1_stub, &expm1_kernel_cuda)
+REGISTER_DISPATCH(rsqrt_stub, &rsqrt_kernel_cuda)
+REGISTER_DISPATCH(sqrt_stub, &sqrt_kernel_cuda)
+REGISTER_DISPATCH(nan_to_num_stub, &nan_to_num_kernel_cuda)
+REGISTER_DISPATCH(frexp_stub, &frexp_kernel_cuda)
 
-} // namespace native
-} // namespace at
+} // namespace at::native

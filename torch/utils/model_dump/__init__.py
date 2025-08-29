@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# mypy: allow-untyped-defs
 """
 model_dump: a one-stop shop for TorchScript model inspection.
 
@@ -63,27 +64,26 @@ Possible improvements:
       (they probably don't work at all right now).
 """
 
-import sys
-import os
-import io
-import pathlib
-import re
 import argparse
-import zipfile
+import io
 import json
+import os
 import pickle
 import pprint
+import re
+import sys
 import urllib.parse
-
-from typing import (
-    Dict,
-)
+import zipfile
+from pathlib import Path
+import warnings
 
 import torch.utils.show_pickle
 
 
 DEFAULT_EXTRA_FILE_SIZE_LIMIT = 16 * 1024
 
+__all__ = ['get_storage_info', 'hierarchical_pickle', 'get_model_info', 'get_inline_skeleton',
+           'burn_in_info', 'get_info_and_burn_skeleton']
 
 def get_storage_info(storage):
     assert isinstance(storage, torch.utils.show_pickle.FakeObject)
@@ -121,9 +121,7 @@ def hierarchical_pickle(data):
     if isinstance(data, torch.utils.show_pickle.FakeObject):
         typename = f"{data.module}.{data.name}"
         if (
-            typename.startswith("__torch__.") or
-            typename.startswith("torch.jit.LoweredWrapper.") or
-            typename.startswith("torch.jit.LoweredModule.")
+            typename.startswith(('__torch__.', 'torch.jit.LoweredWrapper.', 'torch.jit.LoweredModule.'))
         ):
             assert data.args == ()
             return {
@@ -132,12 +130,12 @@ def hierarchical_pickle(data):
             }
         if typename == "torch._utils._rebuild_tensor_v2":
             assert data.state is None
-            storage, offset, size, stride, requires_grad, hooks = data.args
+            storage, offset, size, stride, requires_grad, *_ = data.args
             storage_info = get_storage_info(storage)
             return {"__tensor_v2__": [storage_info, offset, size, stride, requires_grad]}
         if typename == "torch._utils._rebuild_qtensor":
             assert data.state is None
-            storage, offset, size, stride, quantizer, requires_grad, hooks = data.args
+            storage, offset, size, stride, quantizer, requires_grad, *_ = data.args
             storage_info = get_storage_info(storage)
             assert isinstance(quantizer, tuple)
             assert isinstance(quantizer[0], torch.utils.show_pickle.FakeClass)
@@ -178,8 +176,8 @@ def hierarchical_pickle(data):
                 "__module_type__": typename,
                 "state": hierarchical_pickle((msg,)),
             }
-        raise Exception(f"Can't prepare fake object of type for JS: {typename}")
-    raise Exception(f"Can't prepare data of type for JS: {type(data)}")
+        raise Exception(f"Can't prepare fake object of type for JS: {typename}")  # noqa: TRY002
+    raise Exception(f"Can't prepare data of type for JS: {type(data)}")  # noqa: TRY002
 
 
 def get_model_info(
@@ -197,7 +195,7 @@ def get_model_info(
         file_size = path_or_file.stat().st_size  # type: ignore[attr-defined]
     elif isinstance(path_or_file, str):
         default_title = path_or_file
-        file_size = pathlib.Path(path_or_file).stat().st_size
+        file_size = Path(path_or_file).stat().st_size
     else:
         default_title = "buffer"
         path_or_file.seek(0, io.SEEK_END)
@@ -214,14 +212,15 @@ def get_model_info(
             if path_prefix is None:
                 path_prefix = prefix
             elif prefix != path_prefix:
-                raise Exception(f"Mismatched prefixes: {path_prefix} != {prefix}")
-            zip_files.append(dict(
-                filename=zi.filename,
-                compression=zi.compress_type,
-                compressed_size=zi.compress_size,
-                file_size=zi.file_size,
-            ))
-
+                raise Exception(f"Mismatched prefixes: {path_prefix} != {prefix}")  # noqa: TRY002
+            zip_files.append(
+                {
+                    "filename": zi.filename,
+                    "compression": zi.compress_type,
+                    "compressed_size": zi.compress_size,
+                    "file_size": zi.file_size,
+                }
+            )
         assert path_prefix is not None
         version = zf.read(path_prefix + "/version").decode("utf-8").strip()
 
@@ -234,14 +233,14 @@ def get_model_info(
         model_data = get_pickle("data")
         constants = get_pickle("constants")
 
-        # Intern strings that are likely to be re-used.
+        # Intern strings that are likely to be reused.
         # Pickle automatically detects shared structure,
-        # so re-used strings are stored efficiently.
+        # so reused strings are stored efficiently.
         # However, JSON has no way of representing this,
         # so we have to do it manually.
-        interned_strings : Dict[str, int] = {}
+        interned_strings : dict[str, int] = {}
 
-        def ist(s):
+        def intern(s):
             if s not in interned_strings:
                 interned_strings[s] = len(interned_strings)
             return interned_strings[s]
@@ -258,7 +257,22 @@ def get_model_info(
             # Parse debug info and add begin/end markers if not present
             # to ensure that we cover the entire source code.
             debug_info_t = pickle.loads(raw_debug)
-            assert isinstance(debug_info_t, tuple)
+            text_table = None
+
+            if (len(debug_info_t) == 3 and
+                    isinstance(debug_info_t[0], str) and
+                    debug_info_t[0] == 'FORMAT_WITH_STRING_TABLE'):
+                _, text_table, content = debug_info_t
+
+                def parse_new_format(line):
+                    # (0, (('', '', 0), 0, 0))
+                    num, ((text_indexes, fname_idx, offset), start, end), tag = line
+                    text = ''.join(text_table[x] for x in text_indexes)  # type: ignore[index]
+                    fname = text_table[fname_idx]  # type: ignore[index]
+                    return num, ((text, fname, offset), start, end), tag
+
+                debug_info_t = map(parse_new_format, content)
+
             debug_info = list(debug_info_t)
             if not debug_info:
                 debug_info.append((0, (('', '', 0), 0, 0)))
@@ -280,7 +294,7 @@ def get_model_info(
                     s_start = 0
                     s_end = 0
                 text = raw_code[start:end]
-                code_parts.append([text.decode("utf-8"), ist(s_file), s_line, ist(s_text), s_start, s_end])
+                code_parts.append([text.decode("utf-8"), intern(s_file), s_line, intern(s_text), s_start, s_end])
             code_files[zi.filename] = code_parts
 
         extra_files_json_pattern = re.compile(re.escape(path_prefix) + "/extra/.*\\.json")
@@ -319,18 +333,20 @@ def get_model_info(
                 continue
             extra_pickles[zi.filename] = contents
 
-    return {"model": dict(
-        title=title,
-        file_size=file_size,
-        version=version,
-        zip_files=zip_files,
-        interned_strings=list(interned_strings),
-        code_files=code_files,
-        model_data=model_data,
-        constants=constants,
-        extra_files_jsons=extra_files_jsons,
-        extra_pickles=extra_pickles,
-    )}
+    return {
+        "model": {
+            "title": title,
+            "file_size": file_size,
+            "version": version,
+            "zip_files": zip_files,
+            "interned_strings": list(interned_strings),
+            "code_files": code_files,
+            "model_data": model_data,
+            "constants": constants,
+            "extra_files_jsons": extra_files_jsons,
+            "extra_pickles": extra_pickles,
+        }
+    }
 
 
 def get_inline_skeleton():
@@ -339,9 +355,6 @@ def get_inline_skeleton():
     The returned HTML page has no external network dependencies for code.
     It can load model_info.json over HTTP, or be passed to burn_in_info.
     """
-
-    if sys.version_info < (3, 7):
-        raise Exception("get_inline_skeleton requires Python 3.7")
 
     import importlib.resources
 
@@ -379,6 +392,7 @@ def get_info_and_burn_skeleton(path_or_bytesio, **kwargs):
 
 
 def main(argv, *, stdout=None):
+    warnings.warn("torch.utils.model_dump is deprecated and will be removed in a future PyTorch release.")
     parser = argparse.ArgumentParser()
     parser.add_argument("--style", choices=["json", "html"])
     parser.add_argument("--title")
@@ -396,4 +410,4 @@ def main(argv, *, stdout=None):
         page = burn_in_info(skeleton, info)
         output.write(page)
     else:
-        raise Exception("Invalid style")
+        raise Exception("Invalid style")  # noqa: TRY002

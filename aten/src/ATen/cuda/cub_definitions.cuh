@@ -4,10 +4,10 @@
 #include <cuda.h>  // for CUDA_VERSION
 #endif
 
-#if defined(CUDA_VERSION) && CUDA_VERSION >= 11000
+#if !defined(USE_ROCM)
 #include <cub/version.cuh>
 #else
-#define CUB_VERSION 0
+#define CUB_VERSION 200001
 #endif
 
 // cub sort support for __nv_bfloat16 is added to cub 1.13 in:
@@ -50,4 +50,12 @@
 #define CUB_SUPPORTS_FUTURE_VALUE() true
 #else
 #define CUB_SUPPORTS_FUTURE_VALUE() false
+#endif
+
+// There were many bc-breaking changes in major version release of CCCL v3.0.0
+// Please see https://nvidia.github.io/cccl/cccl/3.0_migration_guide.html
+#if CUB_VERSION >= 200800
+#define CUB_V3_PLUS() true
+#else
+#define CUB_V3_PLUS() false
 #endif

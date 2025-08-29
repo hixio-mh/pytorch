@@ -3,20 +3,19 @@
 #include <caffe2/serialize/inline_container.h>
 #include <torch/csrc/jit/api/module.h>
 #include <torch/csrc/jit/ir/ir.h>
-#include <torch/csrc/jit/serialization/pickler.h>
+#include <torch/csrc/jit/serialization/export_bytecode.h>
+#include <torch/csrc/jit/serialization/flatbuffer_serializer.h>
 #include <torch/csrc/jit/serialization/python_print.h>
 #include <torch/csrc/jit/serialization/storage_context.h>
 #include <torch/csrc/jit/serialization/type_name_uniquer.h>
 #include <torch/csrc/onnx/onnx.h>
-
 #include <ostream>
 
 namespace ONNX_NAMESPACE {
 class ModelProto;
 }
 
-namespace torch {
-namespace jit {
+namespace torch::jit {
 
 // This map is used to keep track of parameters that should be exported
 // externally. When `defer_weight_export` is true, the returned map contains
@@ -29,6 +28,7 @@ namespace jit {
 using RawDataExportMap = std::unordered_map<std::string, at::Tensor>;
 
 using SymbolDimMap = std::map<c10::ShapeSymbol, std::string>;
+using DimSymbolMap = std::map<std::string, c10::ShapeSymbol>;
 
 using NodeNameMap = std::unordered_map<const Node*, std::string>;
 
@@ -63,16 +63,14 @@ export_onnx(
 TORCH_API std::string serialize_model_proto_to_string(
     const std::shared_ptr<::ONNX_NAMESPACE::ModelProto>& model_proto);
 
-TORCH_API void check_onnx_proto(
-    const std::string& proto_string,
-    bool full_check = false);
+TORCH_API void check_onnx_proto(const std::string& proto_string);
 
 // Serializer for both oldsyle and unified format TorchScript serialization
 class TORCH_API ScriptModuleSerializer {
  public:
   explicit ScriptModuleSerializer(
       caffe2::serialize::PyTorchStreamWriter& export_writer)
-      : writer_(export_writer), current_source_range_tag_(0) {}
+      : writer_(export_writer) {}
 
   void writeFiles(const std::string& code_dir);
   void serialize(
@@ -95,7 +93,8 @@ class TORCH_API ScriptModuleSerializer {
       const std::string& archive_name,
       const std::string& archive_dir,
       const std::string& tensor_dir,
-      bool use_storage_context = false);
+      bool use_storage_context = false,
+      bool skip_tensor_data = false);
   void updateSourceRangeTags(const SourceRangeRecords& ranges);
 
   caffe2::serialize::PyTorchStreamWriter& writer_;
@@ -137,7 +136,7 @@ class TORCH_API ScriptModuleSerializer {
   // just source information about where the node is, since bytecode inlines the
   // graph before saving it.
   SourceRangeTagMap source_range_tags_;
-  int64_t current_source_range_tag_;
+  int64_t current_source_range_tag_{0};
 };
 
 // For testing purposes
@@ -215,7 +214,7 @@ struct TORCH_API BytecodeEmitMode {
 // true: instruction of default argument values (like LOADC) is emitted.
 // false: instruction of default argument values are not emitted. Instead
 // they are fetched from operator schema.
-// default_args_before_out_args (to forward compatibile support
+// default_args_before_out_args (to forward compatible support
 // operators allowing out arguments and default arguments):
 // true: the number of specified arguments will deserialized to (#all_args -
 // #default_args). false: the number of specified arguments will deserialized to
@@ -259,5 +258,21 @@ Table(const std::vector<std::pair<std::string, IValue>>& entries);
 TORCH_API void enableMobileInterfaceCallExport();
 bool getMobileInterfaceCallExport();
 
-} // namespace jit
-} // namespace torch
+TORCH_API CompilationOptions getOptionsFromGlobal();
+
+TORCH_API void save_jit_module(
+    const Module& module,
+    const std::string& filename,
+    const ExtraFilesMap& extra_files = ExtraFilesMap());
+
+TORCH_API DetachedBuffer::UniqueDetachedBuffer save_jit_module_to_bytes(
+    const Module& module,
+    const ExtraFilesMap& extra_files = ExtraFilesMap());
+
+TORCH_API void save_jit_module_to_write_func(
+    const Module& module,
+    const ExtraFilesMap& extra_files,
+    bool save_mobile_debug_info,
+    const std::function<size_t(const void*, size_t)>& writer_func);
+
+} // namespace torch::jit

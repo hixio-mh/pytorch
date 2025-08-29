@@ -1,9 +1,17 @@
 import copy
 import warnings
+from collections.abc import Iterable, Iterator, Sized
+from typing import TypeVar
+
 from torch.utils.data.datapipes.datapipe import IterDataPipe
 
 
-class IterableWrapperIterDataPipe(IterDataPipe):
+_T = TypeVar("_T")
+
+__all__ = ["IterableWrapperIterDataPipe"]
+
+
+class IterableWrapperIterDataPipe(IterDataPipe[_T]):
     r"""
     Wraps an iterable object to create an IterDataPipe.
 
@@ -18,16 +26,18 @@ class IterableWrapperIterDataPipe(IterDataPipe):
         the iterable instance to prevent data inconsistency across iterations.
 
     Example:
+        >>> # xdoctest: +SKIP
         >>> from torchdata.datapipes.iter import IterableWrapper
         >>> dp = IterableWrapper(range(10))
         >>> list(dp)
         [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
     """
-    def __init__(self, iterable, deepcopy=True):
+
+    def __init__(self, iterable: Iterable[_T], deepcopy: bool = True) -> None:
         self.iterable = iterable
         self.deepcopy = deepcopy
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[_T]:
         source_data = self.iterable
         if self.deepcopy:
             try:
@@ -41,8 +51,9 @@ class IterableWrapperIterDataPipe(IterDataPipe):
                     "The input iterable can not be deepcopied, "
                     "please be aware of in-place modification would affect source data."
                 )
-        for data in source_data:
-            yield data
+        yield from source_data
 
-    def __len__(self):
-        return len(self.iterable)
+    def __len__(self) -> int:
+        if isinstance(self.iterable, Sized):
+            return len(self.iterable)
+        raise TypeError(f"{type(self).__name__} instance doesn't have valid length")

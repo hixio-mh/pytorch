@@ -3,16 +3,16 @@ import torch.nn as nn
 
 
 class GeneralQuantModule(torch.nn.Module):
-    def __init__(self):
-        super(GeneralQuantModule, self).__init__()
-        self.embedding = torch.nn.quantized.Embedding(
+    def __init__(self) -> None:
+        super().__init__()
+        self.embedding = torch.ao.nn.quantized.Embedding(
             num_embeddings=10, embedding_dim=12
         )
         self.embedding_input = torch.tensor([9, 6, 5, 7, 8, 8, 9, 2, 8])
-        self.func = torch.nn.quantized.QFunctional()
-        self.conv1 = torch.nn.quantized.ConvTranspose1d(16, 33, 3, stride=2)
-        self.conv2 = torch.nn.quantized.ConvTranspose2d(16, 33, 3, stride=2)
-        self.conv3 = torch.nn.quantized.ConvTranspose3d(16, 33, 3, stride=2)
+        self.func = torch.ao.nn.quantized.QFunctional()
+        self.conv1 = torch.ao.nn.quantized.ConvTranspose1d(16, 33, 3, stride=2)
+        self.conv2 = torch.ao.nn.quantized.ConvTranspose2d(16, 33, 3, stride=2)
+        self.conv3 = torch.ao.nn.quantized.ConvTranspose3d(16, 33, 3, stride=2)
 
     def forward(self):
         a = torch.quantize_per_tensor(torch.tensor([3.0]), 1.0, 0, torch.qint32)
@@ -22,8 +22,7 @@ class GeneralQuantModule(torch.nn.Module):
         )
         input1 = torch.randn(1, 16, 4)
         input2 = torch.randn(1, 16, 4, 4)
-        input3 = torch.randn(1, 16, 4, 4, 4)
-        return (
+        return len(
             self.func.add(a, b),
             self.func.cat((a, a), 0),
             self.func.mul(a, b),
@@ -47,15 +46,15 @@ class GeneralQuantModule(torch.nn.Module):
 
 
 class DynamicQuantModule:
-    def __init__(self):
-        super(DynamicQuantModule, self).__init__()
+    def __init__(self) -> None:
+        super().__init__()
         self.module = self.M()
 
     def getModule(self):
-        return torch.quantization.quantize_dynamic(self.module, dtype=torch.qint8)
+        return torch.ao.quantization.quantize_dynamic(self.module, dtype=torch.qint8)
 
     class M(torch.nn.Module):
-        def __init__(self):
+        def __init__(self) -> None:
             super(DynamicQuantModule.M, self).__init__()
             self.rnn = nn.RNN(4, 8, 2)
             self.rnncell = nn.RNNCell(4, 8)
@@ -83,6 +82,7 @@ class DynamicQuantModule:
                     ),
                 ]
             )
+            # self.a = torch.nn.utils.rnn.pad_sequence([torch.tensor([1,2,3]), torch.tensor([3,4])], batch_first=True)
 
         def forward(self):
             input = torch.randn(5, 3, 4)
@@ -92,38 +92,38 @@ class DynamicQuantModule:
             trans_input = torch.randn(1, 16, 2)
             tgt = torch.rand(1, 16, 2)
 
-            return (
-                self.rnn(input, h),
-                self.rnncell(input[0], h[0]),
-                self.gru(input, h),
-                self.grucell(input[0], h[0]),
-                self.lstm(input, (h, c)),
-                self.lstmcell(input[0], (h[0], c[0])),
-                self.transformers[0](trans_input, tgt),
-                self.transformers[1](trans_input),
-                self.transformers[2](trans_input, tgt),
-                self.linears[0](linear_input),
-                self.linears[1](linear_input),
-                self.linears[2](linear_input, linear_input),
+            return len(
+                (
+                    self.rnn(input, h),
+                    self.rnncell(input[0], h[0]),
+                    self.gru(input, h),
+                    self.grucell(input[0], h[0]),
+                    self.lstm(input, (h, c)),
+                    # self.lstm(torch.nn.utils.rnn.pack_padded_sequence(self.a, lengths=torch.tensor([3,2,1])), (h, c)),
+                    self.lstmcell(input[0], (h[0], c[0])),
+                    self.transformers[0](trans_input, tgt),
+                    self.transformers[1](trans_input),
+                    self.transformers[2](trans_input, tgt),
+                    self.linears[0](linear_input),
+                    self.linears[1](linear_input),
+                    self.linears[2](linear_input, linear_input),
+                )
             )
 
 
 class StaticQuantModule:
-    def __init__(self):
-        super(StaticQuantModule, self).__init__()
-
     def getModule(self):
         model_fp32 = self.M()
         model_fp32.eval()
-        model_fp32.qconfig = torch.quantization.get_default_qconfig("qnnpack")
-        model_fp32_prepared = torch.quantization.prepare(model_fp32)
-        model_int8 = torch.quantization.convert(model_fp32_prepared)
+        model_fp32.qconfig = torch.ao.quantization.get_default_qconfig("qnnpack")
+        model_fp32_prepared = torch.ao.quantization.prepare(model_fp32)
+        model_int8 = torch.ao.quantization.convert(model_fp32_prepared)
         return model_int8
 
     class M(torch.nn.Module):
-        def __init__(self):
+        def __init__(self) -> None:
             super(StaticQuantModule.M, self).__init__()
-            self.quant = torch.quantization.QuantStub()
+            self.quant = torch.ao.quantization.QuantStub()
             self.input1d = torch.randn(4, 2, 2)
             self.input2d = torch.randn((4, 2, 4, 4))
             self.input3d = torch.randn(4, 2, 2, 4, 4)
@@ -142,7 +142,7 @@ class StaticQuantModule:
                 nn.Conv3d(2, 2, 1), nn.BatchNorm3d(2), nn.InstanceNorm3d(1), nn.ReLU()
             )
             self.layer4 = nn.Sequential(nn.Linear(4, 3))
-            self.dequant = torch.quantization.DeQuantStub()
+            self.dequant = torch.ao.quantization.DeQuantStub()
 
         def forward(self):
             x = self.quant(self.input1d)
@@ -163,14 +163,11 @@ class StaticQuantModule:
 
 
 class FusedQuantModule:
-    def __init__(self):
-        super(FusedQuantModule, self).__init__()
-
     def getModule(self):
         model_fp32 = self.M()
         model_fp32.eval()
-        model_fp32.qconfig = torch.quantization.get_default_qconfig("qnnpack")
-        model_fp32_fused = torch.quantization.fuse_modules(
+        model_fp32.qconfig = torch.ao.quantization.get_default_qconfig("qnnpack")
+        model_fp32_fused = torch.ao.quantization.fuse_modules(
             model_fp32,
             [
                 ["conv1d", "relu1"],
@@ -179,14 +176,14 @@ class FusedQuantModule:
                 ["linear", "relu4"],
             ],
         )
-        model_fp32_prepared = torch.quantization.prepare(model_fp32_fused)
-        model_int8 = torch.quantization.convert(model_fp32_prepared)
+        model_fp32_prepared = torch.ao.quantization.prepare(model_fp32_fused)
+        model_int8 = torch.ao.quantization.convert(model_fp32_prepared)
         return model_int8
 
     class M(torch.nn.Module):
-        def __init__(self):
+        def __init__(self) -> None:
             super(FusedQuantModule.M, self).__init__()
-            self.quant = torch.quantization.QuantStub()
+            self.quant = torch.ao.quantization.QuantStub()
             self.input1d = torch.randn(4, 2, 2)
             self.input2d = torch.randn((4, 2, 4, 4))
             self.input3d = torch.randn(4, 2, 2, 4, 4)
@@ -198,7 +195,7 @@ class FusedQuantModule:
             self.relu2 = nn.ReLU()
             self.relu3 = nn.ReLU()
             self.relu4 = nn.ReLU()
-            self.dequant = torch.quantization.DeQuantStub()
+            self.dequant = torch.ao.quantization.DeQuantStub()
 
         def forward(self):
             x = self.input1d

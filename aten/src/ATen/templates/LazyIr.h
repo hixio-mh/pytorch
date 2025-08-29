@@ -4,18 +4,16 @@
 ${lazy_ir_sysinc}
 ${lazy_ir_inc}
 
-namespace torch {
-namespace lazy {
+${namespace_prologue}
 using at::operator<<;
 
 // kNullValue is used to contribute a static hash value any time
 // a node has an Optional<Value> input that is nullopt.  It is important
-// to differentiate between HASH(nullopt, something) and HASH(something, nullopt),
+// to differentiate between HASH(std::nullopt, something) and HASH(something, std::nullopt),
 // and using kNullValue in the hash function in the order of arguments
 // serves this purpose.
 static const torch::lazy::Value kNullValue = torch::lazy::Value();
 
 ${ir_declarations}
 
-} // namespace lazy
-} // namespace torch
+${namespace_epilogue}

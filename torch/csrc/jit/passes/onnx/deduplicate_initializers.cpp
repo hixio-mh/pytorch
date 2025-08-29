@@ -4,14 +4,13 @@
 
 #include <c10/util/irange.h>
 
-namespace torch {
-namespace jit {
+namespace torch::jit {
 
 namespace onnx {
 using namespace ::c10::onnx;
 }
 
-void DeduplicateInitializers(
+static void DeduplicateInitializers(
     std::shared_ptr<Graph>& g,
     ValueToParamPairMap& valsToParamsMap,
     bool (*comp)(at::Tensor&, at::Tensor&)) {
@@ -63,13 +62,22 @@ void DeduplicateInitializers(
   }
 }
 
-bool DeduplicateInitializersByDataPtr(at::Tensor& t1, at::Tensor& t2) {
+static bool DeduplicateInitializersByDataPtr(at::Tensor& t1, at::Tensor& t2) {
   return t1.sizes().equals(t2.sizes()) && t1.strides().equals(t2.strides()) &&
-      (t1.data_ptr() == t2.data_ptr());
+      (t1.has_storage() && t2.has_storage() && t1.data_ptr() == t2.data_ptr());
 }
 
-bool DeduplicateInitializersByValue(at::Tensor& t1, at::Tensor& t2) {
-  return t1.dtype() == t2.dtype() && t1.equal(t2);
+static bool DeduplicateInitializersByValue(at::Tensor& t1, at::Tensor& t2) {
+  if (t1.dtype() != t2.dtype() || !t1.sizes().equals(t2.sizes()) ||
+      !t1.strides().equals(t2.strides())) {
+    return false;
+  }
+
+  if (t1.device() != t2.device()) {
+    return t1.to("cpu").equal(t2.to("cpu"));
+  }
+
+  return t1.equal(t2);
 }
 
 void DeduplicateInitializers(
@@ -90,5 +98,4 @@ void DeduplicateInitializers(
   buildParamsMapFromValueToParamsMap(valsToParamsMap, paramsDict);
 }
 
-} // namespace jit
-} // namespace torch
+} // namespace torch::jit

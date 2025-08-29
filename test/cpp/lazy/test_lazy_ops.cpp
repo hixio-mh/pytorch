@@ -1,26 +1,35 @@
-#include <gtest/gtest.h>
-#include <iostream>
 #include <c10/core/Device.h>
+#include <c10/core/DeviceType.h>
+#include <gtest/gtest.h>
 #include <test/cpp/lazy/test_lazy_ops_util.h>
-#include <torch/csrc/lazy/core/helpers.h>
-#include <torch/csrc/lazy/core/metrics.h>
 #include <torch/csrc/lazy/core/debug_util.h>
+#include <torch/csrc/lazy/core/helpers.h>
+#include <torch/csrc/lazy/core/ir_builder.h>
 #include <torch/csrc/lazy/core/lazy_graph_executor.h>
+#include <torch/csrc/lazy/core/metrics.h>
 #include <torch/csrc/lazy/core/permutation_util.h>
+#include <torch/csrc/lazy/ts_backend/dynamic_ir.h>
 #include <torch/csrc/lazy/ts_backend/ts_backend_impl.h>
 #include <torch/torch.h>
 
 namespace torch {
 namespace lazy {
 
-
-// Lazy Tensor is disabled in FBCODE until addressing non-virtual methods (e.g. sizes) in TensorImpl
+// Lazy Tensor is disabled in FBCODE until addressing non-virtual methods (e.g.
+// sizes) in TensorImpl
 #ifndef FBCODE_CAFFE2
 
 namespace {
-  // This registers the torchscript backend, without which lazy device won't work
-  torch::lazy::BackendRegistrar g_registrar(GetTSBackendImpl());
+// This registers the torchscript backend, without which lazy device won't work.
+// FIXME: This registers the backend for the whole test binary. We should
+// probably do it and undo it in the test fixture below.
+static bool inline init_backend() {
+  torch::lazy::InitTorchScriptBackend();
+  return true;
 }
+static const bool backend_initialized = init_backend();
+
+} // namespace
 
 class LazyTsTest : public ::testing::Test {
  protected:
@@ -34,9 +43,9 @@ class LazyTsTest : public ::testing::Test {
       const std::string& counter_regex,
       const std::unordered_set<std::string>* ignore_set) {}
 
-  void ExpectCounterChanged(const std::string& counter_regex,
-                            const std::unordered_set<std::string>* ignore_set) {
-  }
+  void ExpectCounterChanged(
+      const std::string& counter_regex,
+      const std::unordered_set<std::string>* ignore_set) {}
 
   void ResetCounters() {}
 
@@ -50,8 +59,10 @@ class LazyOpsTestBase : public LazyTsTest {
 };
 
 void LazyTsTest::SetUp() {
+  (void)backend_initialized; // avoid unused parameter warning
   at::manual_seed(42);
-  torch::lazy::LazyGraphExecutor::Get()->SetRngSeed(torch::lazy::BackendDevice(), 42);
+  torch::lazy::LazyGraphExecutor::Get()->SetRngSeed(
+      torch::lazy::BackendDevice(), 42);
 }
 
 void LazyTsTest::TearDown() {}
@@ -69,8 +80,7 @@ static inline at::DeviceType DefaultDevice() {
   return torch::lazy::getBackend()->EagerFallbackDeviceType();
 }
 
-
-}  // namespace
+} // namespace
 
 TEST_F(LazyOpsTest, TestScalarTensor) {
   torch::Tensor scalar_tensor = torch::scalar_tensor(
@@ -127,8 +137,8 @@ TEST_F(LazyOpsTest, TestIsSigned) {
 
 TEST_F(LazyOpsTest, TestCastByte) {
   torch::Tensor a =
-      torch::rand({2, 2},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
+      torch::rand(
+          {2, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
       100.0;
   torch::Tensor b = torch::_cast_Byte(a);
   ForEachDevice([&](const torch::Device& device) {
@@ -140,8 +150,8 @@ TEST_F(LazyOpsTest, TestCastByte) {
 
 TEST_F(LazyOpsTest, TestCastChar) {
   torch::Tensor a =
-      torch::rand({2, 2},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
+      torch::rand(
+          {2, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
       100.0;
   torch::Tensor b = torch::_cast_Char(a);
   ForEachDevice([&](const torch::Device& device) {
@@ -153,8 +163,8 @@ TEST_F(LazyOpsTest, TestCastChar) {
 
 TEST_F(LazyOpsTest, TestCastShort) {
   torch::Tensor a =
-      torch::rand({2, 2},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
+      torch::rand(
+          {2, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
       100.0;
   torch::Tensor b = torch::_cast_Short(a);
   ForEachDevice([&](const torch::Device& device) {
@@ -166,8 +176,8 @@ TEST_F(LazyOpsTest, TestCastShort) {
 
 TEST_F(LazyOpsTest, TestCastInt) {
   torch::Tensor a =
-      torch::rand({2, 2},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
+      torch::rand(
+          {2, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
       100.0;
   torch::Tensor b = torch::_cast_Int(a);
   ForEachDevice([&](const torch::Device& device) {
@@ -179,8 +189,8 @@ TEST_F(LazyOpsTest, TestCastInt) {
 
 TEST_F(LazyOpsTest, TestCastLong) {
   torch::Tensor a =
-      torch::rand({2, 2},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
+      torch::rand(
+          {2, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
       100.0;
   torch::Tensor b = torch::_cast_Long(a);
   ForEachDevice([&](const torch::Device& device) {
@@ -192,8 +202,8 @@ TEST_F(LazyOpsTest, TestCastLong) {
 
 TEST_F(LazyOpsTest, TestCastFloat) {
   torch::Tensor a =
-      torch::rand({2, 2},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
+      torch::rand(
+          {2, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
       100.0;
   torch::Tensor b = torch::_cast_Float(a);
   ForEachDevice([&](const torch::Device& device) {
@@ -213,12 +223,12 @@ TEST_F(LazyOpsTest, TestRetainType) {
 }
 
 TEST_F(LazyOpsTest, TestLogicalTypeWithInterop) {
-  torch::Tensor query =
-      torch::rand({2, 12, 20, 64},
-                  torch::TensorOptions(torch::kFloat).device(torch::kLazy));
-  torch::Tensor key =
-      torch::rand({2, 12, 64, 20},
-                  torch::TensorOptions(torch::kFloat).device(torch::kLazy));
+  torch::Tensor query = torch::rand(
+      {2, 12, 20, 64},
+      torch::TensorOptions(torch::kFloat).device(torch::kLazy));
+  torch::Tensor key = torch::rand(
+      {2, 12, 64, 20},
+      torch::TensorOptions(torch::kFloat).device(torch::kLazy));
   torch::Tensor scores =
       torch::matmul(query, key) /
       torch::scalar_tensor(
@@ -433,21 +443,25 @@ TEST_F(LazyOpsTest, TestMulScalarInPlace) {
 
 TEST_F(LazyOpsTest, TestDiv) {
   for (torch::ScalarType scalar_type1 :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor a =
-        isFloatingType(scalar_type1)
-            ? torch::rand({3, 4}, torch::TensorOptions(scalar_type1))
-            : torch::randint(0, 100, {3, 4},
-                             torch::TensorOptions(scalar_type1));
+    torch::Tensor a = isFloatingType(scalar_type1)
+        ? torch::rand({3, 4}, torch::TensorOptions(scalar_type1))
+        : torch::randint(0, 100, {3, 4}, torch::TensorOptions(scalar_type1));
     for (torch::ScalarType scalar_type2 :
-         {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+         {torch::kFloat,
+          torch::kByte,
+          torch::kChar,
+          torch::kShort,
+          torch::kInt,
           torch::kLong}) {
-      torch::Tensor b =
-          isFloatingType(scalar_type2)
-              ? torch::rand({3, 4}, torch::TensorOptions(scalar_type2))
-              : torch::randint(1, 100, {3, 4},
-                               torch::TensorOptions(scalar_type2));
+      torch::Tensor b = isFloatingType(scalar_type2)
+          ? torch::rand({3, 4}, torch::TensorOptions(scalar_type2))
+          : torch::randint(1, 100, {3, 4}, torch::TensorOptions(scalar_type2));
       torch::Tensor c = torch::div(a, b);
       ForEachDevice([&](const torch::Device& device) {
         torch::Tensor lazy_a = CopyToDevice(a, device);
@@ -460,26 +474,32 @@ TEST_F(LazyOpsTest, TestDiv) {
 }
 
 TEST_F(LazyOpsTest, TestDivWithRoundingMode) {
-  c10::optional<c10::string_view> rounding_modes[] = {"trunc", "floor",
-                                                      c10::nullopt};
+  std::optional<std::string_view> rounding_modes[] = {
+      "trunc", "floor", std::nullopt};
   for (const auto& rounding_mode : rounding_modes) {
     for (torch::ScalarType scalar_type1 :
-         {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+         {torch::kFloat,
+          torch::kByte,
+          torch::kChar,
+          torch::kShort,
+          torch::kInt,
           torch::kLong}) {
       int lower_bound = (scalar_type1 == torch::kByte) ? 0 : -100;
-      torch::Tensor a =
-          isFloatingType(scalar_type1)
-              ? torch::rand({3, 4}, torch::TensorOptions(scalar_type1))
-              : torch::randint(lower_bound, 50, {3, 4},
-                               torch::TensorOptions(scalar_type1));
+      torch::Tensor a = isFloatingType(scalar_type1)
+          ? torch::rand({3, 4}, torch::TensorOptions(scalar_type1))
+          : torch::randint(
+                lower_bound, 50, {3, 4}, torch::TensorOptions(scalar_type1));
       for (torch::ScalarType scalar_type2 :
-           {torch::kFloat, torch::kByte, torch::kChar, torch::kShort,
-            torch::kInt, torch::kLong}) {
-        torch::Tensor b =
-            isFloatingType(scalar_type2)
-                ? torch::rand({3, 4}, torch::TensorOptions(scalar_type2))
-                : torch::randint(51, 100, {3, 4},
-                                 torch::TensorOptions(scalar_type2));
+           {torch::kFloat,
+            torch::kByte,
+            torch::kChar,
+            torch::kShort,
+            torch::kInt,
+            torch::kLong}) {
+        torch::Tensor b = isFloatingType(scalar_type2)
+            ? torch::rand({3, 4}, torch::TensorOptions(scalar_type2))
+            : torch::randint(
+                  51, 100, {3, 4}, torch::TensorOptions(scalar_type2));
         torch::Tensor c = torch::div(a, b, rounding_mode);
         ForEachDevice([&](const torch::Device& device) {
           torch::Tensor lazy_a = CopyToDevice(a, device);
@@ -494,17 +514,13 @@ TEST_F(LazyOpsTest, TestDivWithRoundingMode) {
 
 TEST_F(LazyOpsTest, TestDivInPlace) {
   for (torch::ScalarType scalar_type1 : {torch::kFloat}) {
-    torch::Tensor a =
-        isFloatingType(scalar_type1)
-            ? torch::rand({3, 4}, torch::TensorOptions(scalar_type1))
-            : torch::randint(0, 100, {3, 4},
-                             torch::TensorOptions(scalar_type1));
+    torch::Tensor a = isFloatingType(scalar_type1)
+        ? torch::rand({3, 4}, torch::TensorOptions(scalar_type1))
+        : torch::randint(0, 100, {3, 4}, torch::TensorOptions(scalar_type1));
     for (torch::ScalarType scalar_type2 : {torch::kFloat}) {
-      torch::Tensor b =
-          isFloatingType(scalar_type2)
-              ? torch::rand({3, 4}, torch::TensorOptions(scalar_type2))
-              : torch::randint(1, 100, {3, 4},
-                               torch::TensorOptions(scalar_type2));
+      torch::Tensor b = isFloatingType(scalar_type2)
+          ? torch::rand({3, 4}, torch::TensorOptions(scalar_type2))
+          : torch::randint(1, 100, {3, 4}, torch::TensorOptions(scalar_type2));
       ForEachDevice([&](const torch::Device& device) {
         torch::Tensor lazy_a = CopyToDevice(a, device);
         torch::Tensor c = a.div_(b);
@@ -518,21 +534,19 @@ TEST_F(LazyOpsTest, TestDivInPlace) {
 }
 
 TEST_F(LazyOpsTest, TestDivInPlaceWithRoundingMode) {
-  c10::optional<c10::string_view> rounding_modes[] = {"trunc", "floor",
-                                                      c10::nullopt};
+  std::optional<std::string_view> rounding_modes[] = {
+      "trunc", "floor", std::nullopt};
   for (const auto& rounding_mode : rounding_modes) {
     for (torch::ScalarType scalar_type1 : {torch::kFloat}) {
-      torch::Tensor a =
-          isFloatingType(scalar_type1)
-              ? torch::rand({3, 4}, torch::TensorOptions(scalar_type1))
-              : torch::randint(-100, 100, {3, 4},
-                               torch::TensorOptions(scalar_type1));
+      torch::Tensor a = isFloatingType(scalar_type1)
+          ? torch::rand({3, 4}, torch::TensorOptions(scalar_type1))
+          : torch::randint(
+                -100, 100, {3, 4}, torch::TensorOptions(scalar_type1));
       for (torch::ScalarType scalar_type2 : {torch::kFloat}) {
-        torch::Tensor b =
-            isFloatingType(scalar_type2)
-                ? torch::rand({3, 4}, torch::TensorOptions(scalar_type2))
-                : torch::randint(1, 100, {3, 4},
-                                 torch::TensorOptions(scalar_type2));
+        torch::Tensor b = isFloatingType(scalar_type2)
+            ? torch::rand({3, 4}, torch::TensorOptions(scalar_type2))
+            : torch::randint(
+                  1, 100, {3, 4}, torch::TensorOptions(scalar_type2));
         ForEachDevice([&](const torch::Device& device) {
           torch::Tensor lazy_a = CopyToDevice(a, device);
           torch::Tensor c = a.div_(b, rounding_mode);
@@ -547,16 +561,20 @@ TEST_F(LazyOpsTest, TestDivInPlaceWithRoundingMode) {
 
 TEST_F(LazyOpsTest, TestDivScalar) {
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor a =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {3, 4},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  1, 100, {3, 4},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor a = isFloatingType(scalar_type)
+        ? torch::rand(
+              {3, 4}, torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              1,
+              100,
+              {3, 4},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     for (bool is_float : {true, false}) {
       torch::Scalar b = is_float ? torch::Scalar(3.0) : torch::Scalar(3);
       torch::Tensor c = torch::div(a, b);
@@ -571,14 +589,14 @@ TEST_F(LazyOpsTest, TestDivScalar) {
 
 TEST_F(LazyOpsTest, TestDivScalarInPlace) {
   for (torch::ScalarType scalar_type : {torch::kFloat}) {
-    torch::Tensor a =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {3, 4},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  1, 100, {3, 4},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor a = isFloatingType(scalar_type)
+        ? torch::rand(
+              {3, 4}, torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              1,
+              100,
+              {3, 4},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     for (bool is_float : {true, false}) {
       torch::Scalar b = is_float ? torch::Scalar(3.0) : torch::Scalar(3);
       ForEachDevice([&](const torch::Device& device) {
@@ -831,7 +849,9 @@ TEST_F(LazyOpsTest, TestGeScalar) {
 
 TEST_F(LazyOpsTest, TestGeScalarInplace) {
   torch::Tensor input = torch::arange(
-      -1., 1.5, 0.5,
+      -1.,
+      1.5,
+      0.5,
       torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Scalar other(float(0));
   torch::Tensor input_copy = input.clone();
@@ -856,7 +876,9 @@ TEST_F(LazyOpsTest, TestLeScalar) {
 
 TEST_F(LazyOpsTest, TestLeScalarInplace) {
   torch::Tensor input = torch::arange(
-      -1., 1.5, 0.5,
+      -1.,
+      1.5,
+      0.5,
       torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Scalar other(float(0));
   torch::Tensor input_copy = input.clone();
@@ -881,7 +903,9 @@ TEST_F(LazyOpsTest, TestGtScalar) {
 
 TEST_F(LazyOpsTest, TestGtScalarInplace) {
   torch::Tensor input = torch::arange(
-      -1., 1.5, 0.5,
+      -1.,
+      1.5,
+      0.5,
       torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Scalar other(float(0));
   torch::Tensor input_copy = input.clone();
@@ -906,7 +930,9 @@ TEST_F(LazyOpsTest, TestLtScalar) {
 
 TEST_F(LazyOpsTest, TestLtScalarInplace) {
   torch::Tensor input = torch::arange(
-      -1., 1.5, 0.5,
+      -1.,
+      1.5,
+      0.5,
       torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Scalar other(float(0));
   torch::Tensor input_copy = input.clone();
@@ -929,7 +955,7 @@ TEST_F(LazyOpsTest, TestIntegerAdd) {
       torch::Tensor b =
           torch::randint(0, 63, {2, 2}, torch::TensorOptions(type));
       torch::Scalar one =
-          isIntegralType(type) ? torch::Scalar(1) : torch::Scalar(1.0);
+          isIntegralType(type, false) ? torch::Scalar(1) : torch::Scalar(1.0);
       torch::Tensor c = torch::add(b, one);
 
       torch::Tensor lazy_a = CopyToDevice(a, device);
@@ -953,15 +979,24 @@ TEST_F(LazyOpsTest, TestSVD) {
         auto lazy_b = torch::svd(lazy_a, /*some=*/true, /*compute_uv=*/true);
         // The U and V matrices might have different sign for column vectors, so
         // cannot be compared if not by absolute value.
-        AllClose(std::get<0>(b).abs(), std::get<0>(lazy_b).abs(), /*rtol=*/1e-3,
-                 /*atol=*/1e-4);
+        AllClose(
+            std::get<0>(b).abs(),
+            std::get<0>(lazy_b).abs(),
+            /*rtol=*/1e-3,
+            /*atol=*/1e-4);
         torch::Tensor diag = std::get<1>(b);
         torch::Tensor lazy_diag = std::get<1>(lazy_b);
         ASSERT_EQ(diag.sizes(), lazy_diag.sizes());
-        AllClose(diag, lazy_diag, /*rtol=*/1e-3,
-                 /*atol=*/1e-4);
-        AllClose(std::get<2>(b).abs(), std::get<2>(lazy_b).abs(), /*rtol=*/1e-3,
-                 /*atol=*/1e-4);
+        AllClose(
+            diag,
+            lazy_diag,
+            /*rtol=*/1e-3,
+            /*atol=*/1e-4);
+        AllClose(
+            std::get<2>(b).abs(),
+            std::get<2>(lazy_b).abs(),
+            /*rtol=*/1e-3,
+            /*atol=*/1e-4);
       });
     }
   }
@@ -977,39 +1012,17 @@ TEST_F(LazyOpsTest, TestQR) {
       ForEachDevice([&](const torch::Device& device) {
         torch::Tensor lazy_a = CopyToDevice(a, device);
         auto lazy_b = torch::qr(lazy_a);
-        AllClose(std::get<0>(b).abs(), std::get<0>(lazy_b).abs(), /*rtol=*/1e-3,
-                 /*atol=*/1e-4);
-        AllClose(std::get<1>(b).abs(), std::get<1>(lazy_b).abs(), /*rtol=*/1e-3,
-                 /*atol=*/1e-4);
+        AllClose(
+            std::get<0>(b).abs(),
+            std::get<0>(lazy_b).abs(),
+            /*rtol=*/1e-3,
+            /*atol=*/1e-4);
+        AllClose(
+            std::get<1>(b).abs(),
+            std::get<1>(lazy_b).abs(),
+            /*rtol=*/1e-3,
+            /*atol=*/1e-4);
       });
-    }
-  }
-}
-
-TEST_F(LazyOpsTest, TestSymEig) {
-  static const int dims[] = {4, 7};
-  for (auto m : dims) {
-    for (bool eigenvectors : {true, false}) {
-      for (bool upper : {true, false}) {
-        torch::Tensor a = torch::rand(
-            {m, m},
-            torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-        torch::Tensor sym_a = a.mm(a.t());
-        auto b = torch::symeig(sym_a, eigenvectors, upper);
-        ForEachDevice([&](const torch::Device& device) {
-          torch::Tensor lazy_a = CopyToDevice(sym_a, device);
-          auto lazy_b = torch::symeig(lazy_a, eigenvectors, upper);
-          AllClose(std::get<0>(b), std::get<0>(lazy_b), /*rtol=*/3e-2,
-                   /*atol=*/1e-2);
-          if (eigenvectors) {
-            AllClose(std::get<1>(b).abs(), std::get<1>(lazy_b).abs(),
-                     /*rtol=*/3e-2,
-                     /*atol=*/1e-2);
-          } else {
-            EXPECT_EQ(std::get<1>(b).sizes(), std::get<1>(lazy_b).sizes());
-          }
-        });
-      }
     }
   }
 }
@@ -1040,8 +1053,7 @@ TEST_F(LazyOpsTest, TestLogDet) {
   for (auto m : dims) {
     torch::Tensor a = torch::rand(
         {3, m, m}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-    torch::Tensor pd_a =
-        torch::matmul(a, torch::transpose(a, 1, 2)) +
+    torch::Tensor pd_a = torch::matmul(a, torch::transpose(a, 1, 2)) +
         torch::eye(m,
                    torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
     torch::Tensor b = torch::logdet(pd_a);
@@ -1062,27 +1074,41 @@ TEST_F(LazyOpsTest, TestTriangularSolve) {
           for (bool upper : {true, false}) {
             for (bool transpose : {true, false}) {
               for (bool unitriangular : {true, false}) {
-                torch::Tensor a =
-                    torch::randn({m, m}, torch::TensorOptions(torch::kFloat)
-                                             .device(DefaultDevice()));
-                torch::Tensor b =
-                    torch::randn({m, n}, torch::TensorOptions(torch::kFloat)
-                                             .device(DefaultDevice()));
+                torch::Tensor a = torch::randn(
+                    {m, m},
+                    torch::TensorOptions(torch::kFloat)
+                        .device(DefaultDevice()));
+                torch::Tensor b = torch::randn(
+                    {m, n},
+                    torch::TensorOptions(torch::kFloat)
+                        .device(DefaultDevice()));
                 a = batched_a ? a.expand({3, m, m}).clone() : a;
                 b = batched_b ? b.expand({3, m, n}).clone() : b;
                 auto result = torch::triangular_solve(
-                    b, a, /*upper=*/upper, /*transpose=*/transpose,
+                    b,
+                    a,
+                    /*upper=*/upper,
+                    /*transpose=*/transpose,
                     /*unitriangular=*/unitriangular);
                 ForEachDevice([&](const torch::Device& device) {
                   torch::Tensor lazy_a = CopyToDevice(a, device);
                   torch::Tensor lazy_b = CopyToDevice(b, device);
                   auto lazy_result = torch::triangular_solve(
-                      lazy_b, lazy_a, /*upper=*/upper, /*transpose=*/transpose,
+                      lazy_b,
+                      lazy_a,
+                      /*upper=*/upper,
+                      /*transpose=*/transpose,
                       /*unitriangular=*/unitriangular);
-                  AllClose(std::get<0>(result), std::get<0>(lazy_result),
-                           /*rtol=*/1e-3, /*atol=*/1e-4);
-                  AllClose(std::get<1>(result), std::get<1>(lazy_result),
-                           /*rtol=*/1e-3, /*atol=*/1e-4);
+                  AllClose(
+                      std::get<0>(result),
+                      std::get<0>(lazy_result),
+                      /*rtol=*/1e-3,
+                      /*atol=*/1e-4);
+                  AllClose(
+                      std::get<1>(result),
+                      std::get<1>(lazy_result),
+                      /*rtol=*/1e-3,
+                      /*atol=*/1e-4);
                 });
               }
             }
@@ -1231,16 +1257,19 @@ TEST_F(LazyOpsTest, TestUnaryMax) {
 
 TEST_F(LazyOpsTest, TestAll) {
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor a =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {3, 4},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {3, 4},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor a = isFloatingType(scalar_type)
+        ? torch::rand(
+              {3, 4}, torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {3, 4},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor b = torch::all(a);
     ForEachDevice([&](const torch::Device& device) {
       torch::Tensor lazy_a = CopyToDevice(a, device);
@@ -1252,7 +1281,9 @@ TEST_F(LazyOpsTest, TestAll) {
 
 TEST_F(LazyOpsTest, TestAllDim) {
   torch::Tensor a = torch::randint(
-      0, 5, {2, 3, 4},
+      0,
+      5,
+      {2, 3, 4},
       torch::TensorOptions(torch::kByte).device(DefaultDevice()));
   int rank = a.dim();
   for (int dim = -rank; dim < rank; ++dim) {
@@ -1267,7 +1298,9 @@ TEST_F(LazyOpsTest, TestAllDim) {
 
 TEST_F(LazyOpsTest, TestAllDimKeep) {
   torch::Tensor a = torch::randint(
-      0, 5, {2, 3, 4},
+      0,
+      5,
+      {2, 3, 4},
       torch::TensorOptions(torch::kByte).device(DefaultDevice()));
   int rank = a.dim();
   for (int dim = -rank; dim < rank; ++dim) {
@@ -1348,16 +1381,19 @@ TEST_F(LazyOpsTest, TestAmin) {
 
 TEST_F(LazyOpsTest, TestAny) {
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor a =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {3, 4},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {3, 4},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor a = isFloatingType(scalar_type)
+        ? torch::rand(
+              {3, 4}, torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {3, 4},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor b = torch::any(a);
     ForEachDevice([&](const torch::Device& device) {
       torch::Tensor lazy_a = CopyToDevice(a, device);
@@ -1369,7 +1405,9 @@ TEST_F(LazyOpsTest, TestAny) {
 
 TEST_F(LazyOpsTest, TestAnyDim) {
   torch::Tensor a = torch::randint(
-      0, 5, {2, 3, 4},
+      0,
+      5,
+      {2, 3, 4},
       torch::TensorOptions(torch::kByte).device(DefaultDevice()));
   int rank = a.dim();
   for (int dim = -rank; dim < rank; ++dim) {
@@ -1384,7 +1422,9 @@ TEST_F(LazyOpsTest, TestAnyDim) {
 
 TEST_F(LazyOpsTest, TestAnyDimKeep) {
   torch::Tensor a = torch::randint(
-      0, 5, {2, 3, 4},
+      0,
+      5,
+      {2, 3, 4},
       torch::TensorOptions(torch::kByte).device(DefaultDevice()));
   int rank = a.dim();
   for (int dim = -rank; dim < rank; ++dim) {
@@ -1512,7 +1552,7 @@ TEST_F(LazyOpsTest, TestStdWithCorrection) {
   torch::Tensor a = torch::rand(
       {4, 3, 4}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   // int rank = a.dim();
-  c10::optional<int64_t> corrections[] = {1, 2, c10::nullopt};
+  std::optional<c10::Scalar> corrections[] = {1, 2, std::nullopt};
   for (const auto& correction : corrections) {
     for (auto keepdim : {true, false}) {
       for (const auto& dim :
@@ -1532,7 +1572,7 @@ TEST_F(LazyOpsTest, TestStdMeanWithCorrection) {
   torch::Tensor a = torch::rand(
       {4, 3, 4}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   // int rank = a.dim();
-  c10::optional<int64_t> corrections[] = {1, 2, c10::nullopt};
+  std::optional<c10::Scalar> corrections[] = {1, 2, std::nullopt};
   for (const auto& correction : corrections) {
     for (auto keepdim : {true, false}) {
       for (const auto& dim :
@@ -1669,7 +1709,7 @@ TEST_F(LazyOpsTest, TestVarWithDim) {
 TEST_F(LazyOpsTest, TestVarWithCorrection) {
   torch::Tensor a = torch::rand(
       {4, 3, 4}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  c10::optional<int64_t> corrections[] = {1, 2, c10::nullopt};
+  std::optional<c10::Scalar> corrections[] = {1, 2, std::nullopt};
   for (const auto& dim : std::vector<std::vector<int64_t>>{{0, 1}, {-3, -2}}) {
     for (bool keepDim : {true, false}) {
       for (const auto& correction : corrections) {
@@ -1689,7 +1729,7 @@ TEST_F(LazyOpsTest, TestVarWithCorrection) {
 TEST_F(LazyOpsTest, TestVarMeanWithCorrection) {
   torch::Tensor a = torch::rand(
       {4, 3, 4}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  c10::optional<int64_t> corrections[] = {1, 2, c10::nullopt};
+  std::optional<c10::Scalar> corrections[] = {1, 2, std::nullopt};
   for (const auto& dim : std::vector<std::vector<int64_t>>{{0, 1}, {-3, -2}}) {
     for (const auto& correction : corrections) {
       for (auto keepdim : {true, false}) {
@@ -1864,8 +1904,14 @@ TEST_F(LazyOpsTest, TestUniformInPlace) {
 }
 
 TEST_F(LazyOpsTest, TestRandomInPlace) {
-  for (auto dtype : {torch::kFloat, torch::kDouble, torch::kByte, torch::kChar,
-                     torch::kShort, torch::kInt, torch::kLong}) {
+  for (auto dtype :
+       {torch::kFloat,
+        torch::kDouble,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
+        torch::kLong}) {
     const double eps = 0.2;
     torch::Tensor a = torch::zeros({10, 10, 10}, torch::TensorOptions(dtype));
     ForEachDevice([&](const torch::Device& device) {
@@ -1883,8 +1929,14 @@ TEST_F(LazyOpsTest, TestRandomInPlace) {
 }
 
 TEST_F(LazyOpsTest, TestRandomInPlaceDefaultFrom) {
-  for (auto dtype : {torch::kFloat, torch::kDouble, torch::kByte, torch::kChar,
-                     torch::kShort, torch::kInt, torch::kLong}) {
+  for (auto dtype :
+       {torch::kFloat,
+        torch::kDouble,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
+        torch::kLong}) {
     const double eps = 0.2;
     torch::Tensor a = torch::zeros({10, 10, 10}, torch::TensorOptions(dtype));
     ForEachDevice([&](const torch::Device& device) {
@@ -1902,8 +1954,14 @@ TEST_F(LazyOpsTest, TestRandomInPlaceDefaultFrom) {
 }
 
 TEST_F(LazyOpsTest, TestRandomInPlaceDefault) {
-  for (auto dtype : {torch::kFloat, torch::kDouble, torch::kByte, torch::kChar,
-                     torch::kShort, torch::kInt, torch::kLong}) {
+  for (auto dtype :
+       {torch::kFloat,
+        torch::kDouble,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
+        torch::kLong}) {
     auto input = torch::zeros({10}, torch::TensorOptions(dtype));
     ForEachDevice([&](const torch::Device& device) {
       auto lazyInput = CopyToDevice(input, device);
@@ -1932,17 +1990,6 @@ TEST_F(LazyOpsTest, TestNormNuclear) {
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_a = CopyToDevice(a, device);
     torch::Tensor lazy_b = torch::norm(lazy_a, 1);
-    AllClose(b, lazy_b);
-  });
-}
-
-TEST_F(LazyOpsTest, TestFrobeniusNorm) {
-  torch::Tensor a = torch::rand(
-      {4, 3, 4}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor b = torch::frobenius_norm(a);
-  ForEachDevice([&](const torch::Device& device) {
-    torch::Tensor lazy_a = CopyToDevice(a, device);
-    torch::Tensor lazy_b = torch::frobenius_norm(lazy_a);
     AllClose(b, lazy_b);
   });
 }
@@ -1977,27 +2024,35 @@ TEST_F(LazyOpsTest, TestFrobeniusNormInDims) {
 
 TEST_F(LazyOpsTest, TestGroupNorm) {
   int num_channels = 6;
-  torch::Tensor input =
-      torch::rand({20, num_channels, 10, 10},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor weight =
-      torch::rand({num_channels},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor bias =
-      torch::rand({num_channels},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {20, num_channels, 10, 10},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor weight = torch::rand(
+      {num_channels},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor bias = torch::rand(
+      {num_channels},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   double eps = 1e-05;
   for (int num_groups : {3, 6, 1}) {
-    torch::Tensor output =
-        torch::group_norm(input, num_groups, weight, bias, eps,
-                          /*cudnn_enabled=*/false);
+    torch::Tensor output = torch::group_norm(
+        input,
+        num_groups,
+        weight,
+        bias,
+        eps,
+        /*cudnn_enabled=*/false);
     ForEachDevice([&](const torch::Device& device) {
       torch::Tensor lazy_input = CopyToDevice(input, device);
       torch::Tensor lazy_weight = CopyToDevice(weight, device);
       torch::Tensor lazy_bias = CopyToDevice(bias, device);
-      torch::Tensor lazy_output =
-          torch::group_norm(lazy_input, num_groups, lazy_weight, lazy_bias, eps,
-                            /*cudnn_enabled=*/false);
+      torch::Tensor lazy_output = torch::group_norm(
+          lazy_input,
+          num_groups,
+          lazy_weight,
+          lazy_bias,
+          eps,
+          /*cudnn_enabled=*/false);
       AllClose(output, lazy_output, /*rtol=*/1e-3, /*atol=*/1e-5);
     });
   }
@@ -2005,25 +2060,31 @@ TEST_F(LazyOpsTest, TestGroupNorm) {
 
 TEST_F(LazyOpsTest, TestGroupNormBackward) {
   int num_channels = 6;
-  torch::Tensor input =
-      torch::rand({2, num_channels, 5, 5}, torch::TensorOptions(torch::kFloat)
-                                               .device(DefaultDevice())
-                                               .requires_grad(true));
-  torch::Tensor weight =
-      torch::rand({num_channels}, torch::TensorOptions(torch::kFloat)
-                                      .device(DefaultDevice())
-                                      .requires_grad(true));
-  torch::Tensor bias =
-      torch::rand({num_channels}, torch::TensorOptions(torch::kFloat)
-                                      .device(DefaultDevice())
-                                      .requires_grad(true));
+  torch::Tensor input = torch::rand(
+      {2, num_channels, 5, 5},
+      torch::TensorOptions(torch::kFloat)
+          .device(DefaultDevice())
+          .requires_grad(true));
+  torch::Tensor weight = torch::rand(
+      {num_channels},
+      torch::TensorOptions(torch::kFloat)
+          .device(DefaultDevice())
+          .requires_grad(true));
+  torch::Tensor bias = torch::rand(
+      {num_channels},
+      torch::TensorOptions(torch::kFloat)
+          .device(DefaultDevice())
+          .requires_grad(true));
   double eps = 1e-05;
   for (bool undef_weight : {true, false}) {
     for (int num_groups : {3, 6, 1}) {
       auto testfn =
           [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
         return torch::group_norm(
-            /*input=*/inputs[0], num_groups, inputs[1], inputs[2],
+            /*input=*/inputs[0],
+            num_groups,
+            inputs[1],
+            inputs[2],
             /*eps=*/eps,
             /*cudnn_enabled=*/false);
       };
@@ -2031,8 +2092,10 @@ TEST_F(LazyOpsTest, TestGroupNormBackward) {
       ForEachDevice([&](const torch::Device& device) {
         TestBackward(
             {input, undef_weight ? undef : weight, undef_weight ? undef : bias},
-            device, testfn,
-            /*rtol=*/1e-3, /*atol=*/1e-3,
+            device,
+            testfn,
+            /*rtol=*/1e-3,
+            /*atol=*/1e-3,
             /*derivative_level=*/2);
       });
     }
@@ -2042,26 +2105,33 @@ TEST_F(LazyOpsTest, TestGroupNormBackward) {
 TEST_F(LazyOpsTest, TestInstanceNorm) {
   int batch = 5;
   int num_channels = 20;
-  torch::Tensor input =
-      torch::rand({batch, num_channels, 10, 10},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor weight =
-      torch::rand({num_channels},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor bias =
-      torch::rand({num_channels},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor running_mean =
-      torch::zeros({num_channels},
-                   torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor running_var =
-      torch::ones({num_channels},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {batch, num_channels, 10, 10},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor weight = torch::rand(
+      {num_channels},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor bias = torch::rand(
+      {num_channels},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor running_mean = torch::zeros(
+      {num_channels},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor running_var = torch::ones(
+      {num_channels},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   double momentum = 0.1;
   double eps = 1e-05;
   torch::Tensor output = torch::instance_norm(
-      input, weight, bias, running_mean, running_var,
-      /*use_input_stats=*/true, momentum, eps, /*cudnn_enabled=*/false);
+      input,
+      weight,
+      bias,
+      running_mean,
+      running_var,
+      /*use_input_stats=*/true,
+      momentum,
+      eps,
+      /*cudnn_enabled=*/false);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     torch::Tensor lazy_weight = CopyToDevice(weight, device);
@@ -2069,16 +2139,23 @@ TEST_F(LazyOpsTest, TestInstanceNorm) {
     torch::Tensor lazy_running_mean = CopyToDevice(running_mean, device);
     torch::Tensor lazy_running_var = CopyToDevice(running_var, device);
     torch::Tensor lazy_output = torch::instance_norm(
-        lazy_input, lazy_weight, lazy_bias, lazy_running_mean, lazy_running_var,
-        /*use_input_stats=*/true, momentum, eps, /*cudnn_enabled=*/false);
+        lazy_input,
+        lazy_weight,
+        lazy_bias,
+        lazy_running_mean,
+        lazy_running_var,
+        /*use_input_stats=*/true,
+        momentum,
+        eps,
+        /*cudnn_enabled=*/false);
     AllClose(output, lazy_output, /*rtol=*/1e-3, /*atol=*/1e-5);
   });
 }
 
 TEST_F(LazyOpsTest, TestLayerNorm) {
-  torch::Tensor input =
-      torch::rand({20, 10, 10, 10},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {20, 10, 10, 10},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   double eps = 1e-05;
   torch::Tensor undef;
   for (bool undef_weight : {true, false}) {
@@ -2090,10 +2167,13 @@ TEST_F(LazyOpsTest, TestLayerNorm) {
       torch::Tensor bias = torch::rand(
           normalized_shape,
           torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-      torch::Tensor output = torch::layer_norm(input, normalized_shape,
-                                               undef_weight ? undef : weight,
-                                               undef_weight ? undef : bias, eps,
-                                               /*cudnn_enabled=*/false);
+      torch::Tensor output = torch::layer_norm(
+          input,
+          normalized_shape,
+          undef_weight ? undef : weight,
+          undef_weight ? undef : bias,
+          eps,
+          /*cudnn_enabled=*/false);
       ForEachDevice([&](const torch::Device& device) {
         torch::Tensor lazy_input = CopyToDevice(input, device);
         torch::Tensor lazy_weight =
@@ -2101,7 +2181,11 @@ TEST_F(LazyOpsTest, TestLayerNorm) {
         torch::Tensor lazy_bias =
             undef_weight ? undef : CopyToDevice(bias, device);
         torch::Tensor lazy_output = torch::layer_norm(
-            lazy_input, normalized_shape, lazy_weight, lazy_bias, eps,
+            lazy_input,
+            normalized_shape,
+            lazy_weight,
+            lazy_bias,
+            eps,
             /*cudnn_enabled=*/false);
         AllClose(output, lazy_output, /*rtol=*/1e-3, /*atol=*/1e-5);
       });
@@ -2110,10 +2194,11 @@ TEST_F(LazyOpsTest, TestLayerNorm) {
 }
 
 TEST_F(LazyOpsTest, TestLayerNormBackward) {
-  torch::Tensor input =
-      torch::rand({2, 3, 3, 3}, torch::TensorOptions(torch::kFloat)
-                                    .device(DefaultDevice())
-                                    .requires_grad(true));
+  torch::Tensor input = torch::rand(
+      {2, 3, 3, 3},
+      torch::TensorOptions(torch::kFloat)
+          .device(DefaultDevice())
+          .requires_grad(true));
   double eps = 1e-05;
   for (bool undef_weight : {true, false}) {
     for (int64_t normalized_size : {2, 3}) {
@@ -2121,24 +2206,32 @@ TEST_F(LazyOpsTest, TestLayerNormBackward) {
       auto testfn =
           [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
         return torch::layer_norm(
-            /*input=*/inputs[0], normalized_shape, inputs[1], inputs[2],
+            /*input=*/inputs[0],
+            normalized_shape,
+            inputs[1],
+            inputs[2],
             /*eps=*/eps,
             /*cudnn_enabled=*/false);
       };
-      torch::Tensor weight =
-          torch::rand(normalized_shape, torch::TensorOptions(torch::kFloat)
-                                            .device(DefaultDevice())
-                                            .requires_grad(true));
-      torch::Tensor bias =
-          torch::rand(normalized_shape, torch::TensorOptions(torch::kFloat)
-                                            .device(DefaultDevice())
-                                            .requires_grad(true));
+      torch::Tensor weight = torch::rand(
+          normalized_shape,
+          torch::TensorOptions(torch::kFloat)
+              .device(DefaultDevice())
+              .requires_grad(true));
+      torch::Tensor bias = torch::rand(
+          normalized_shape,
+          torch::TensorOptions(torch::kFloat)
+              .device(DefaultDevice())
+              .requires_grad(true));
       torch::Tensor undef;
       ForEachDevice([&](const torch::Device& device) {
         TestBackward(
             {input, undef_weight ? undef : weight, undef_weight ? undef : bias},
-            device, testfn,
-            /*rtol=*/1e-3, /*atol=*/1e-4, /*derivative_level=*/2);
+            device,
+            testfn,
+            /*rtol=*/1e-3,
+            /*atol=*/1e-4,
+            /*derivative_level=*/2);
       });
     }
   }
@@ -2260,7 +2353,13 @@ TEST_F(LazyOpsTest, TestTripletMarginLoss) {
             torch::Tensor lazy_positive = CopyToDevice(positive, device);
             torch::Tensor lazy_negative = CopyToDevice(negative, device);
             torch::Tensor lazy_output = torch::triplet_margin_loss(
-                lazy_anchor, lazy_positive, lazy_negative, margin, p, eps, swap,
+                lazy_anchor,
+                lazy_positive,
+                lazy_negative,
+                margin,
+                p,
+                eps,
+                swap,
                 reduction);
             AllClose(output, lazy_output);
           });
@@ -2273,18 +2372,19 @@ TEST_F(LazyOpsTest, TestTripletMarginLoss) {
 TEST_F(LazyOpsTest, TestBinaryCrossEntropy) {
   int batch = 10;
   int classes = 5;
-  torch::Tensor input =
-      torch::rand({batch, classes},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor target =
-      torch::rand({batch, classes},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor weight =
-      torch::rand({batch, classes},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {batch, classes},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor target = torch::rand(
+      {batch, classes},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor weight = torch::rand(
+      {batch, classes},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor undef;
   for (torch::Reduction::Reduction reduction :
-       {torch::Reduction::Mean, torch::Reduction::Sum,
+       {torch::Reduction::Mean,
+        torch::Reduction::Sum,
         torch::Reduction::None}) {
     for (bool undef_weight : {false, true}) {
       ForEachDevice([&](const torch::Device& device) {
@@ -2329,12 +2429,12 @@ TEST_F(LazyOpsTest, TestMarginRankingLoss) {
 TEST_F(LazyOpsTest, TestBCEWithLogits) {
   int batch = 10;
   int classes = 5;
-  torch::Tensor input =
-      torch::rand({batch, classes},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor target =
-      torch::rand({batch, classes},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {batch, classes},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor target = torch::rand(
+      {batch, classes},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor weight = torch::rand(
       {classes}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor pos_weight = torch::rand(
@@ -2346,8 +2446,11 @@ TEST_F(LazyOpsTest, TestBCEWithLogits) {
       for (bool undef_pos_weight : {false, true}) {
         ForEachDevice([&](const torch::Device& device) {
           torch::Tensor output = torch::binary_cross_entropy_with_logits(
-              input, target, undef_weight ? undef : weight,
-              undef_pos_weight ? undef : pos_weight, reduction);
+              input,
+              target,
+              undef_weight ? undef : weight,
+              undef_pos_weight ? undef : pos_weight,
+              reduction);
           torch::Tensor lazy_input = CopyToDevice(input, device);
           torch::Tensor lazy_target = CopyToDevice(target, device);
           torch::Tensor lazy_weight =
@@ -2470,7 +2573,8 @@ TEST_F(LazyOpsTest, TestCumSumCast) {
     torch::Tensor result = torch::cumsum(input, dim, torch::kDouble);
     ForEachDevice([&](const torch::Device& device) {
       torch::Tensor lazy_input = CopyToDevice(input, device);
-      torch::Tensor lazy_result = torch::cumsum(lazy_input, dim, torch::kDouble);
+      torch::Tensor lazy_result =
+          torch::cumsum(lazy_input, dim, torch::kDouble);
       AllClose(result, lazy_result);
     });
   }
@@ -2478,7 +2582,8 @@ TEST_F(LazyOpsTest, TestCumSumCast) {
 
 TEST_F(LazyOpsTest, TestCumSumLong) {
   torch::Tensor input = torch::randint(
-      1000, {4, 3, 4},
+      1000,
+      {4, 3, 4},
       torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   int rank = input.dim();
   for (int dim = -rank; dim < rank; ++dim) {
@@ -2521,15 +2626,17 @@ TEST_F(LazyOpsTest, TestCumProd) {
 
 TEST_F(LazyOpsTest, TestCumProdCast) {
   torch::Tensor input = torch::mul(
-      torch::rand({4, 3, 4},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice())),
+      torch::rand(
+          {4, 3, 4},
+          torch::TensorOptions(torch::kFloat).device(DefaultDevice())),
       10);
   int rank = input.dim();
   for (int dim = -rank; dim < rank; ++dim) {
     torch::Tensor result = torch::cumprod(input, dim, torch::kDouble);
     ForEachDevice([&](const torch::Device& device) {
       torch::Tensor lazy_input = CopyToDevice(input, device);
-      torch::Tensor lazy_result = torch::cumprod(lazy_input, dim, torch::kDouble);
+      torch::Tensor lazy_result =
+          torch::cumprod(lazy_input, dim, torch::kDouble);
       AllClose(result, lazy_result);
     });
   }
@@ -2551,8 +2658,8 @@ TEST_F(LazyOpsTest, TestCumProdLong) {
 
 TEST_F(LazyOpsTest, TestCumProdCastLong) {
   torch::Tensor input =
-      torch::rand({2, 3},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
+      torch::rand(
+          {2, 3}, torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
       7;
   int rank = input.dim();
   for (int dim = -rank; dim < rank; ++dim) {
@@ -2568,10 +2675,11 @@ TEST_F(LazyOpsTest, TestCumProdCastLong) {
 TEST_F(LazyOpsTest, TestArgMin) {
   torch::Tensor a = torch::rand(
       {4, 4, 4}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor b = torch::argmin(a, c10::nullopt, /*keepdim=*/false);
+  torch::Tensor b = torch::argmin(a, std::nullopt, /*keepdim=*/false);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_a = CopyToDevice(a, device);
-    torch::Tensor lazy_b = torch::argmin(lazy_a, c10::nullopt, /*keepdim=*/false);
+    torch::Tensor lazy_b =
+        torch::argmin(lazy_a, std::nullopt, /*keepdim=*/false);
     AllEqual(b, lazy_b);
   });
 }
@@ -2629,10 +2737,11 @@ TEST_F(LazyOpsTest, TestArgMinWrapper) {
 TEST_F(LazyOpsTest, TestArgMax) {
   torch::Tensor a = torch::rand(
       {4, 4, 4}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor b = torch::argmax(a, c10::nullopt, /*keepdim=*/false);
+  torch::Tensor b = torch::argmax(a, std::nullopt, /*keepdim=*/false);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_a = CopyToDevice(a, device);
-    torch::Tensor lazy_b = torch::argmax(lazy_a, c10::nullopt, /*keepdim=*/false);
+    torch::Tensor lazy_b =
+        torch::argmax(lazy_a, std::nullopt, /*keepdim=*/false);
     AllEqual(b, lazy_b);
   });
 }
@@ -2666,10 +2775,11 @@ TEST_F(LazyOpsTest, TestArgMaxDimKeep) {
 TEST_F(LazyOpsTest, TestArgMaxSameValue) {
   torch::Tensor a = torch::ones(
       {4, 4, 4}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor b = torch::argmax(a, c10::nullopt, /*keepdim=*/false);
+  torch::Tensor b = torch::argmax(a, std::nullopt, /*keepdim=*/false);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_a = CopyToDevice(a, device);
-    torch::Tensor lazy_b = torch::argmax(lazy_a, c10::nullopt, /*keepdim=*/false);
+    torch::Tensor lazy_b =
+        torch::argmax(lazy_a, std::nullopt, /*keepdim=*/false);
     AllEqual(b, lazy_b);
   });
 }
@@ -2756,8 +2866,8 @@ TEST_F(LazyOpsTest, TestAcos) {
 
 TEST_F(LazyOpsTest, TestAcosh) {
   torch::Tensor a =
-      torch::rand({2, 2},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
+      torch::rand(
+          {2, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
       100;
   torch::Tensor b = torch::acosh(a);
   ForEachDevice([&](const torch::Device& device) {
@@ -2769,8 +2879,8 @@ TEST_F(LazyOpsTest, TestAcosh) {
 
 TEST_F(LazyOpsTest, TestAcoshInPlace) {
   torch::Tensor a =
-      torch::rand({2, 2},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
+      torch::rand(
+          {2, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
       100;
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_a = CopyToDevice(a, device);
@@ -2890,10 +3000,10 @@ TEST_F(LazyOpsTest, TestClampMin) {
   torch::Tensor a = torch::rand(
       {2, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Scalar min_val(0.311);
-  torch::Tensor b = torch::clamp(a, min_val, c10::nullopt);
+  torch::Tensor b = torch::clamp(a, min_val, std::nullopt);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_a = CopyToDevice(a, device);
-    torch::Tensor lazy_b = torch::clamp(lazy_a, min_val, c10::nullopt);
+    torch::Tensor lazy_b = torch::clamp(lazy_a, min_val, std::nullopt);
     AllClose(b, lazy_b);
   });
 }
@@ -2902,10 +3012,10 @@ TEST_F(LazyOpsTest, TestClampMax) {
   torch::Tensor a = torch::rand(
       {2, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Scalar max_val(0.409);
-  torch::Tensor b = torch::clamp(a, c10::nullopt, max_val);
+  torch::Tensor b = torch::clamp(a, std::nullopt, max_val);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_a = CopyToDevice(a, device);
-    torch::Tensor lazy_b = torch::clamp(lazy_a, c10::nullopt, max_val);
+    torch::Tensor lazy_b = torch::clamp(lazy_a, std::nullopt, max_val);
     AllClose(b, lazy_b);
   });
 }
@@ -3235,9 +3345,10 @@ TEST_F(LazyOpsTest, TestOnesLikeOptions) {
 }
 
 TEST_F(LazyOpsTest, TestFull) {
-  torch::Tensor a =
-      torch::full({2, 2}, 3.1165,
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor a = torch::full(
+      {2, 2},
+      3.1165,
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_a = torch::full(
         {2, 2}, 3.1165, torch::TensorOptions(torch::kFloat).device(device));
@@ -3264,22 +3375,27 @@ TEST_F(LazyOpsTest, TestFullLikeOptions) {
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_a = CopyToDevice(a, device);
     torch::Tensor lazy_b = torch::full_like(
-        lazy_a, 3.1165,
+        lazy_a,
+        3.1165,
         torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
     AllClose(a, lazy_a);
   });
 }
 
 TEST_F(LazyOpsTest, TestARange) {
-  for (auto& ranges : std::vector<std::vector<float>>{{0.0, 100.0, 0.5},
-                                                      {0.0, -100.0, -0.5}}) {
+  for (auto& ranges : std::vector<std::vector<float>>{
+           {0.0, 100.0, 0.5}, {0.0, -100.0, -0.5}}) {
     torch::Tensor a = torch::arange(
-        ranges[0], ranges[1], ranges[2],
+        ranges[0],
+        ranges[1],
+        ranges[2],
         torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
     ForEachDevice([&](const torch::Device& device) {
-      torch::Tensor lazy_a =
-          torch::arange(ranges[0], ranges[1], ranges[2],
-                        torch::TensorOptions(torch::kFloat).device(device));
+      torch::Tensor lazy_a = torch::arange(
+          ranges[0],
+          ranges[1],
+          ranges[2],
+          torch::TensorOptions(torch::kFloat).device(device));
       AllClose(a, lazy_a);
     });
   }
@@ -3288,8 +3404,8 @@ TEST_F(LazyOpsTest, TestARange) {
 TEST_F(LazyOpsTest, TestARangeOut) {
   torch::Tensor a = torch::randn(
       {4}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  for (auto& ranges : std::vector<std::vector<float>>{{0.0, 100.0, 0.5},
-                                                      {0.0, -100.0, -0.5}}) {
+  for (auto& ranges : std::vector<std::vector<float>>{
+           {0.0, 100.0, 0.5}, {0.0, -100.0, -0.5}}) {
     torch::Tensor b = torch::arange_out(a, ranges[0], ranges[1], ranges[2]);
     ForEachDevice([&](const torch::Device& device) {
       torch::Tensor lazy_a = CopyToDevice(a, device);
@@ -3316,11 +3432,13 @@ TEST_F(LazyOpsTest, TestBartlettWindow) {
   for (bool periodic : {false, true}) {
     ForEachDevice([&](const torch::Device& device) {
       torch::Tensor output = torch::bartlett_window(
-          window_length, periodic,
+          window_length,
+          periodic,
           torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
 
       torch::Tensor lazy_output = torch::bartlett_window(
-          window_length, periodic,
+          window_length,
+          periodic,
           torch::TensorOptions(torch::kFloat).device(device));
       AllClose(output, lazy_output, /*rtol=*/1e-5, /*atol=*/1e-7);
     });
@@ -3332,10 +3450,12 @@ TEST_F(LazyOpsTest, TestBlackmanWindow) {
   for (bool periodic : {false, true}) {
     ForEachDevice([&](const torch::Device& device) {
       torch::Tensor output = torch::blackman_window(
-          window_length, periodic,
+          window_length,
+          periodic,
           torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
       torch::Tensor lazy_output = torch::blackman_window(
-          window_length, periodic,
+          window_length,
+          periodic,
           torch::TensorOptions(torch::kFloat).device(device));
       AllClose(output, lazy_output, /*rtol=*/1e-5, /*atol=*/1e-7);
     });
@@ -3349,10 +3469,16 @@ TEST_F(LazyOpsTest, TestHammingWindow) {
   for (bool periodic : {false, true}) {
     ForEachDevice([&](const torch::Device& device) {
       torch::Tensor output = torch::hamming_window(
-          window_length, periodic, alpha, beta,
+          window_length,
+          periodic,
+          alpha,
+          beta,
           torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
       torch::Tensor lazy_output = torch::hamming_window(
-          window_length, periodic, alpha, beta,
+          window_length,
+          periodic,
+          alpha,
+          beta,
           torch::TensorOptions(torch::kFloat).device(device));
       AllClose(output, lazy_output);
     });
@@ -3364,10 +3490,12 @@ TEST_F(LazyOpsTest, TestHannWindow) {
   for (bool periodic : {false, true}) {
     ForEachDevice([&](const torch::Device& device) {
       torch::Tensor output = torch::hann_window(
-          window_length, periodic,
+          window_length,
+          periodic,
           torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
       torch::Tensor lazy_output = torch::hann_window(
-          window_length, periodic,
+          window_length,
+          periodic,
           torch::TensorOptions(torch::kFloat).device(device));
       AllClose(output, lazy_output);
     });
@@ -3394,10 +3522,16 @@ TEST_F(LazyOpsTest, TestLogSigmoidForward) {
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_a = CopyToDevice(a, device);
     auto lazy_tuple = torch::log_sigmoid_forward(lazy_a);
-    AllClose(std::get<0>(tuple), std::get<0>(lazy_tuple),
-             /*rtol=*/1e-3, /*atol=*/1e-5);
-    AllClose(std::get<1>(tuple), std::get<1>(lazy_tuple),
-             /*rtol=*/1e-3, /*atol=*/1e-5);
+    AllClose(
+        std::get<0>(tuple),
+        std::get<0>(lazy_tuple),
+        /*rtol=*/1e-3,
+        /*atol=*/1e-5);
+    AllClose(
+        std::get<1>(tuple),
+        std::get<1>(lazy_tuple),
+        /*rtol=*/1e-3,
+        /*atol=*/1e-5);
   });
 }
 
@@ -3496,12 +3630,12 @@ TEST_F(LazyOpsTest, TestMatmul_2x2) {
 }
 
 TEST_F(LazyOpsTest, TestMatmulBcast) {
-  torch::Tensor a =
-      torch::rand({4, 2, 3, 2, 4},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor b =
-      torch::rand({2, 1, 4, 3},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor a = torch::rand(
+      {4, 2, 3, 2, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor b = torch::rand(
+      {2, 1, 4, 3},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor c = torch::matmul(a, b);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_a = CopyToDevice(a, device);
@@ -3677,8 +3811,11 @@ TEST_F(LazyOpsTest, TestLinear) {
     torch::Tensor lazy_result_with_bias =
         torch::linear(lazy_input, lazy_weight, lazy_bias);
     AllClose(result, lazy_result, /*rtol=*/1e-2, /*atol=*/1e-4);
-    AllClose(result_with_bias, lazy_result_with_bias, /*rtol=*/1e-2,
-             /*atol=*/1e-4);
+    AllClose(
+        result_with_bias,
+        lazy_result_with_bias,
+        /*rtol=*/1e-2,
+        /*atol=*/1e-4);
   });
 }
 
@@ -3709,12 +3846,16 @@ TEST_F(LazyOpsTest, TestEinsumOuter) {
 }
 
 TEST_F(LazyOpsTest, TestEinsumOuterBackward) {
-  torch::Tensor a = torch::rand({5}, torch::TensorOptions(torch::kFloat)
-                                         .device(DefaultDevice())
-                                         .requires_grad(true));
-  torch::Tensor b = torch::rand({5}, torch::TensorOptions(torch::kFloat)
-                                         .device(DefaultDevice())
-                                         .requires_grad(true));
+  torch::Tensor a = torch::rand(
+      {5},
+      torch::TensorOptions(torch::kFloat)
+          .device(DefaultDevice())
+          .requires_grad(true));
+  torch::Tensor b = torch::rand(
+      {5},
+      torch::TensorOptions(torch::kFloat)
+          .device(DefaultDevice())
+          .requires_grad(true));
   std::string equation = "i,j->ij";
   auto testfn = [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
     return torch::einsum(equation, inputs);
@@ -3782,9 +3923,9 @@ TEST_F(LazyOpsTest, TestEinsumPyTorchLowerBatchDiagonal) {
 }
 
 TEST_F(LazyOpsTest, TestEinsumPyTorchLowerBatchPermute) {
-  torch::Tensor input =
-      torch::rand({2, 3, 4, 5},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 3, 4, 5},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   std::string equation = "...ij->...ji";
   torch::Tensor result = torch::einsum(equation, {input});
   ForEachDevice([&](const torch::Device& device) {
@@ -3814,18 +3955,18 @@ TEST_F(LazyOpsTest, TestBilinear) {
   int in1_features = 4;
   int in2_features = 6;
   int out_features = 8;
-  torch::Tensor input1 =
-      torch::rand({batch_size, in1_features},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor input2 =
-      torch::rand({batch_size, in2_features},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor weight =
-      torch::rand({out_features, in1_features, in2_features},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor bias =
-      torch::rand({out_features},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input1 = torch::rand(
+      {batch_size, in1_features},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input2 = torch::rand(
+      {batch_size, in2_features},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor weight = torch::rand(
+      {out_features, in1_features, in2_features},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor bias = torch::rand(
+      {out_features},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input1 = CopyToDevice(input1, device);
     torch::Tensor lazy_input2 = CopyToDevice(input2, device);
@@ -3845,9 +3986,9 @@ TEST_F(LazyOpsTest, TestUpsampleNearest2D) {
   int uh = 8;
   int uw = 8;
   int chans = 2;
-  torch::Tensor input =
-      torch::rand({batch_size, chans, h, w},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {batch_size, chans, h, w},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     torch::Tensor result = torch::upsample_nearest2d(input, {uh, uw});
@@ -3867,11 +4008,14 @@ TEST_F(LazyOpsTest, TestUpsampleNearest2DBackward) {
     return torch::upsample_nearest2d(inputs[0], {uh, uw});
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::rand({batch_size, chans, h, w},
-                              torch::TensorOptions(torch::kFloat)
-                                  .device(DefaultDevice())
-                                  .requires_grad(true))},
-                 device, testfn);
+    TestBackward(
+        {torch::rand(
+            {batch_size, chans, h, w},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn);
   });
 }
 
@@ -3882,15 +4026,15 @@ TEST_F(LazyOpsTest, TestUpsampleNearest2DWithScale) {
   int chans = 2;
   double scale_h = 2.5;
   double scale_w = 3.4;
-  torch::Tensor input =
-      torch::rand({batch_size, chans, h, w},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {batch_size, chans, h, w},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     torch::Tensor result = torch::upsample_nearest2d(
-        input, c10::nullopt, at::ArrayRef<double>{scale_h, scale_w});
+        input, std::nullopt, at::ArrayRef<double>{scale_h, scale_w});
     torch::Tensor lazy_result = torch::upsample_nearest2d(
-        lazy_input, c10::nullopt, at::ArrayRef<double>{scale_h, scale_w});
+        lazy_input, std::nullopt, at::ArrayRef<double>{scale_h, scale_w});
     AllClose(result, lazy_result);
   });
 }
@@ -3903,15 +4047,18 @@ TEST_F(LazyOpsTest, TestUpsampleNearest2DBackwardWithScale) {
   double scale_h = 2.5;
   double scale_w = 3.4;
   auto testfn = [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
-    return torch::upsample_nearest2d(inputs[0], c10::nullopt,
-                                     at::ArrayRef<double>{scale_h, scale_w});
+    return torch::upsample_nearest2d(
+        inputs[0], std::nullopt, at::ArrayRef<double>{scale_h, scale_w});
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::rand({batch_size, chans, h, w},
-                              torch::TensorOptions(torch::kFloat)
-                                  .device(DefaultDevice())
-                                  .requires_grad(true))},
-                 device, testfn);
+    TestBackward(
+        {torch::rand(
+            {batch_size, chans, h, w},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn);
   });
 }
 
@@ -3950,11 +4097,14 @@ TEST_F(LazyOpsTest, TestUpsampleBilinear2DBackward) {
       return torch::upsample_bilinear2d(inputs[0], {uh, uw}, align_corners);
     };
     ForEachDevice([&](const torch::Device& device) {
-      TestBackward({torch::rand({batch_size, chans, h, w},
-                                torch::TensorOptions(torch::kFloat)
-                                    .device(DefaultDevice())
-                                    .requires_grad(true))},
-                   device, testfn);
+      TestBackward(
+          {torch::rand(
+              {batch_size, chans, h, w},
+              torch::TensorOptions(torch::kFloat)
+                  .device(DefaultDevice())
+                  .requires_grad(true))},
+          device,
+          testfn);
     });
   }
 }
@@ -4017,9 +4167,9 @@ TEST_F(LazyOpsTest, TestAddCDivWithBroadcast) {
 }
 
 TEST_F(LazyOpsTest, TestSize) {
-  torch::Tensor input =
-      torch::rand({2, 1, 4, 6},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 1, 4, 6},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   int rank = input.dim();
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -4038,9 +4188,12 @@ TEST_F(LazyOpsTest, TestSelect) {
       return torch::select(inputs[0], dim, 0);
     };
     ForEachDevice([&](const torch::Device& device) {
-      TestBackward({torch::rand(input_sizes, torch::TensorOptions(torch::kFloat)
-                                                 .requires_grad(true))},
-                   device, testfn);
+      TestBackward(
+          {torch::rand(
+              input_sizes,
+              torch::TensorOptions(torch::kFloat).requires_grad(true))},
+          device,
+          testfn);
     });
   };
 }
@@ -4126,20 +4279,20 @@ TEST_F(LazyOpsTest, TestDropoutInPlace) {
 }
 
 TEST_F(LazyOpsTest, TestRandperm) {
-  int n = 5;
+  unsigned n = 5;
   torch::Tensor shuffle = torch::randperm(
       n, torch::TensorOptions(torch::kLong).device(torch::kLazy));
   torch::Tensor shuffle_cpu = CopyToDevice(shuffle, torch::kCPU);
-  std::vector<int64_t> shuffle_data(shuffle_cpu.data_ptr<int64_t>(),
-                                    shuffle_cpu.data_ptr<int64_t>() + n);
-  EXPECT_TRUE(shuffle_data.size() == n &&
-              torch::lazy::IsPermutation(shuffle_data));
+  std::vector<int64_t> shuffle_data(
+      shuffle_cpu.data_ptr<int64_t>(), shuffle_cpu.data_ptr<int64_t>() + n);
+  EXPECT_TRUE(
+      shuffle_data.size() == n && torch::lazy::IsPermutation(shuffle_data));
 }
 
 TEST_F(LazyOpsTest, TestSlice) {
-  torch::Tensor a =
-      torch::rand({32, 24, 16},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor a = torch::rand(
+      {32, 24, 16},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor b = torch::slice(a, 1, 0, 16, 1);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_a = CopyToDevice(a, device);
@@ -4168,13 +4321,17 @@ TEST_F(LazyOpsTest, TestTakeBackward) {
   };
   ForEachDevice([&](const torch::Device& device) {
     TestBackward(
-        {torch::rand({4, 4}, torch::TensorOptions(torch::kFloat)
-                                 .device(DefaultDevice())
-                                 .requires_grad(true)),
+        {torch::rand(
+             {4, 4},
+             torch::TensorOptions(torch::kFloat)
+                 .device(DefaultDevice())
+                 .requires_grad(true)),
          torch::randint(
-             16, {5},
+             16,
+             {5},
              torch::TensorOptions(torch::kLong).device(DefaultDevice()))},
-        device, testfn);
+        device,
+        testfn);
   });
 }
 
@@ -4465,16 +4622,19 @@ TEST_F(LazyOpsTest, TestScatterAddInPlace) {
 
 TEST_F(LazyOpsTest, TestIndexSelect) {
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor a =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {3, 4},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {3, 4},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor a = isFloatingType(scalar_type)
+        ? torch::rand(
+              {3, 4}, torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {3, 4},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     for (torch::ScalarType index_scalar_type : {torch::kInt, torch::kLong}) {
       torch::Tensor b = torch::empty(
           {2}, torch::TensorOptions(index_scalar_type).device(DefaultDevice()));
@@ -4486,8 +4646,10 @@ TEST_F(LazyOpsTest, TestIndexSelect) {
         ForEachDevice([&](const torch::Device& device) {
           torch::Tensor lazy_a = CopyToDevice(a, device);
           torch::Tensor lazy_b = CopyToDevice(b, device);
-          torch::Tensor lazy_c0 = torch::index_select(lazy_a, 0 + offset, lazy_b);
-          torch::Tensor lazy_c1 = torch::index_select(lazy_a, 1 + offset, lazy_b);
+          torch::Tensor lazy_c0 =
+              torch::index_select(lazy_a, 0 + offset, lazy_b);
+          torch::Tensor lazy_c1 =
+              torch::index_select(lazy_a, 1 + offset, lazy_b);
           AllEqual(c0, lazy_c0);
           AllEqual(c1, lazy_c1);
         });
@@ -4498,16 +4660,19 @@ TEST_F(LazyOpsTest, TestIndexSelect) {
 
 TEST_F(LazyOpsTest, TestIndexSelectRank0) {
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor a =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {3, 4},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {3, 4},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor a = isFloatingType(scalar_type)
+        ? torch::rand(
+              {3, 4}, torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {3, 4},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor b = torch::scalar_tensor(
         2, torch::TensorOptions(torch::kLong).device(DefaultDevice()));
     torch::Tensor c0 = torch::index_select(a, 0, b);
@@ -4603,9 +4768,10 @@ TEST_F(LazyOpsTest, TestEyeWide) {
   int lines = 3;
   int cols = 5;
   ForEachDevice([&](const torch::Device& device) {
-    torch::Tensor out =
-        torch::eye(lines, cols,
-                   torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+    torch::Tensor out = torch::eye(
+        lines,
+        cols,
+        torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
     torch::Tensor lazy_out = torch::eye(
         lines, cols, torch::TensorOptions(torch::kFloat).device(device));
     AllClose(out, lazy_out);
@@ -4616,9 +4782,10 @@ TEST_F(LazyOpsTest, TestEyeNarrow) {
   int lines = 5;
   int cols = 3;
   ForEachDevice([&](const torch::Device& device) {
-    torch::Tensor out =
-        torch::eye(lines, cols,
-                   torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+    torch::Tensor out = torch::eye(
+        lines,
+        cols,
+        torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
     torch::Tensor lazy_out = torch::eye(
         lines, cols, torch::TensorOptions(torch::kFloat).device(device));
     AllClose(out, lazy_out);
@@ -4634,7 +4801,8 @@ TEST_F(LazyOpsTest, TestBroadcastTensors) {
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_a = CopyToDevice(a, device);
     torch::Tensor lazy_b = CopyToDevice(b, device);
-    std::vector<torch::Tensor> lazy_c = torch::broadcast_tensors({lazy_a, lazy_b});
+    std::vector<torch::Tensor> lazy_c =
+        torch::broadcast_tensors({lazy_a, lazy_b});
     ASSERT_EQ(c.size(), lazy_c.size());
     for (size_t i = 0; i < c.size(); ++i) {
       AllClose(c[i], lazy_c[i]);
@@ -4644,18 +4812,24 @@ TEST_F(LazyOpsTest, TestBroadcastTensors) {
 
 TEST_F(LazyOpsTest, TestOneIndex) {
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor params =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor params = isFloatingType(scalar_type)
+        ? torch::rand(
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor indices = torch::randint(
-        -3, 3, {2, 4, 3},
+        -3,
+        3,
+        {2, 4, 3},
         torch::TensorOptions(torch::kLong).device(DefaultDevice()));
     torch::Tensor result = torch::index(params, {indices});
     ForEachDevice([&](const torch::Device& device) {
@@ -4669,23 +4843,29 @@ TEST_F(LazyOpsTest, TestOneIndex) {
 
 TEST_F(LazyOpsTest, TestOneIndexTransfer) {
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor params =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor params = isFloatingType(scalar_type)
+        ? torch::rand(
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor indices = torch::randint(
-        -3, 3, {2, 4, 3},
+        -3,
+        3,
+        {2, 4, 3},
         torch::TensorOptions(torch::kLong).device(DefaultDevice()));
     torch::Tensor result = torch::index(params, {indices});
     ForEachDevice([&](const torch::Device& device) {
       torch::Tensor lazy_params = CopyToDevice(params, device);
-      torch::Tensor lazy_result = torch::index(lazy_params, {indices});
+      torch::Tensor lazy_result = torch::index(lazy_params, {indices.cpu()});
       AllEqual(result, lazy_result);
     });
   }
@@ -4758,22 +4938,30 @@ TEST_F(LazyOpsTest, TestMaskedScatter) {
 
 TEST_F(LazyOpsTest, TestMultiIndexHeadNull) {
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor params =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor params = isFloatingType(scalar_type)
+        ? torch::rand(
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor indices_null;
     torch::Tensor indices_0 = torch::randint(
-        -3, 3, {2, 4, 3},
+        -3,
+        3,
+        {2, 4, 3},
         torch::TensorOptions(torch::kLong).device(DefaultDevice()));
     torch::Tensor indices_1 = torch::randint(
-        -3, 3, {2, 4, 3},
+        -3,
+        3,
+        {2, 4, 3},
         torch::TensorOptions(torch::kLong).device(DefaultDevice()));
     torch::Tensor result =
         torch::index(params, {indices_null, indices_0, indices_1});
@@ -4790,22 +4978,30 @@ TEST_F(LazyOpsTest, TestMultiIndexHeadNull) {
 
 TEST_F(LazyOpsTest, TestMultiIndexMiddleNull) {
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor params =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor params = isFloatingType(scalar_type)
+        ? torch::rand(
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor indices_0 = torch::randint(
-        -3, 3, {2, 4, 3},
+        -3,
+        3,
+        {2, 4, 3},
         torch::TensorOptions(torch::kLong).device(DefaultDevice()));
     torch::Tensor indices_null;
     torch::Tensor indices_1 = torch::randint(
-        -3, 3, {2, 4, 3},
+        -3,
+        3,
+        {2, 4, 3},
         torch::TensorOptions(torch::kLong).device(DefaultDevice()));
     torch::Tensor result =
         torch::index(params, {indices_0, indices_null, indices_1});
@@ -4822,22 +5018,30 @@ TEST_F(LazyOpsTest, TestMultiIndexMiddleNull) {
 
 TEST_F(LazyOpsTest, TestMultiIndexTailNull) {
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor params =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor params = isFloatingType(scalar_type)
+        ? torch::rand(
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor indices_0 = torch::randint(
-        -3, 3, {2, 4, 3},
+        -3,
+        3,
+        {2, 4, 3},
         torch::TensorOptions(torch::kLong).device(DefaultDevice()));
     torch::Tensor indices_null;
     torch::Tensor indices_1 = torch::randint(
-        -3, 3, {2, 4, 3},
+        -3,
+        3,
+        {2, 4, 3},
         torch::TensorOptions(torch::kLong).device(DefaultDevice()));
     torch::Tensor result =
         torch::index(params, {indices_0, indices_1, indices_null});
@@ -4854,21 +5058,29 @@ TEST_F(LazyOpsTest, TestMultiIndexTailNull) {
 
 TEST_F(LazyOpsTest, TestMultiIndexMiddleBroadcast) {
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor params =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor params = isFloatingType(scalar_type)
+        ? torch::rand(
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor indices_0 = torch::randint(
-        -3, 3, {2, 4, 3},
+        -3,
+        3,
+        {2, 4, 3},
         torch::TensorOptions(torch::kLong).device(DefaultDevice()));
     torch::Tensor indices_1 = torch::randint(
-        -3, 3, {2, 1, 3},
+        -3,
+        3,
+        {2, 1, 3},
         torch::TensorOptions(torch::kLong).device(DefaultDevice()));
     torch::Tensor result = torch::index(params, {indices_0, indices_1});
     ForEachDevice([&](const torch::Device& device) {
@@ -4884,21 +5096,29 @@ TEST_F(LazyOpsTest, TestMultiIndexMiddleBroadcast) {
 
 TEST_F(LazyOpsTest, TestMultiIndexTailBroadcast) {
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor params =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor params = isFloatingType(scalar_type)
+        ? torch::rand(
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor indices_0 = torch::randint(
-        -3, 3, {2, 1, 3},
+        -3,
+        3,
+        {2, 1, 3},
         torch::TensorOptions(torch::kLong).device(DefaultDevice()));
     torch::Tensor indices_1 = torch::randint(
-        -3, 3, {2, 1},
+        -3,
+        3,
+        {2, 1},
         torch::TensorOptions(torch::kLong).device(DefaultDevice()));
     torch::Tensor result = torch::index(params, {indices_0, indices_1});
     ForEachDevice([&](const torch::Device& device) {
@@ -4914,18 +5134,23 @@ TEST_F(LazyOpsTest, TestMultiIndexTailBroadcast) {
 
 TEST_F(LazyOpsTest, TestMaskIndex) {
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor params =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {2, 2},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {2, 2},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor params = isFloatingType(scalar_type)
+        ? torch::rand(
+              {2, 2}, torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {2, 2},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor indices = torch::randint(
-        0, 2, {2, 2},
+        0,
+        2,
+        {2, 2},
         torch::TensorOptions(torch::kBool).device(DefaultDevice()));
     torch::Tensor result = torch::index(params, {indices});
     ForEachDevice([&](const torch::Device& device) {
@@ -4939,27 +5164,33 @@ TEST_F(LazyOpsTest, TestMaskIndex) {
 
 TEST_F(LazyOpsTest, TestOneIndexPut) {
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor params =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor params = isFloatingType(scalar_type)
+        ? torch::rand(
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor indices = torch::randint(
-        -3, 3, {2, 4, 3},
+        -3,
+        3,
+        {2, 4, 3},
         torch::TensorOptions(torch::kLong).device(DefaultDevice()));
-    torch::Tensor values =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor values = isFloatingType(scalar_type)
+        ? torch::rand(
+              {3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     for (bool accumulate : {false, true}) {
       if (accumulate && IsCuda()) {
         GTEST_SKIP();
@@ -4970,8 +5201,8 @@ TEST_F(LazyOpsTest, TestOneIndexPut) {
         torch::Tensor lazy_params = CopyToDevice(params, device);
         torch::Tensor lazy_indices = CopyToDevice(indices, device);
         torch::Tensor lazy_values = CopyToDevice(values, device);
-        torch::Tensor lazy_result =
-            torch::index_put(lazy_params, {lazy_indices}, lazy_values, accumulate);
+        torch::Tensor lazy_result = torch::index_put(
+            lazy_params, {lazy_indices}, lazy_values, accumulate);
         AllEqual(result, lazy_result);
       });
     }
@@ -4980,34 +5211,40 @@ TEST_F(LazyOpsTest, TestOneIndexPut) {
 
 TEST_F(LazyOpsTest, TestOneIndexPutInPlace) {
   torch::Tensor indices = torch::randint(
-      -3, 3, {2, 4, 3},
+      -3,
+      3,
+      {2, 4, 3},
       torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor values =
-        torch::ones({3, 5, 6, 7},
-                    torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor values = torch::ones(
+        {3, 5, 6, 7},
+        torch::TensorOptions(scalar_type).device(DefaultDevice()));
     for (bool accumulate : {false, true}) {
       if (accumulate && IsCuda()) {
         GTEST_SKIP();
       }
       ForEachDevice([&](const torch::Device& device) {
-        torch::Tensor params =
-            isFloatingType(scalar_type)
-                ? torch::rand(
-                      {4, 3, 5, 6, 7},
-                      torch::TensorOptions(scalar_type).device(DefaultDevice()))
-                : torch::randint(100, {4, 3, 5, 6, 7},
-                                 torch::TensorOptions(scalar_type)
-                                     .device(DefaultDevice()));
+        torch::Tensor params = isFloatingType(scalar_type)
+            ? torch::rand(
+                  {4, 3, 5, 6, 7},
+                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
+            : torch::randint(
+                  100,
+                  {4, 3, 5, 6, 7},
+                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
         torch::Tensor lazy_params = CopyToDevice(params.clone(), device);
         torch::Tensor result =
             torch::index_put_(params, {indices}, values, accumulate);
         torch::Tensor lazy_indices = CopyToDevice(indices, device);
         torch::Tensor lazy_values = CopyToDevice(values, device);
-        torch::Tensor lazy_result = torch::index_put_(lazy_params, {lazy_indices},
-                                                     lazy_values, accumulate);
+        torch::Tensor lazy_result = torch::index_put_(
+            lazy_params, {lazy_indices}, lazy_values, accumulate);
         AllEqual(result, lazy_result);
         AllEqual(params, lazy_params);
       });
@@ -5017,22 +5254,28 @@ TEST_F(LazyOpsTest, TestOneIndexPutInPlace) {
 
 TEST_F(LazyOpsTest, TestOneIndexPutTransfer) {
   torch::Tensor indices = torch::randint(
-      -3, 3, {2, 4, 3},
+      -3,
+      3,
+      {2, 4, 3},
       torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor params =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
-    torch::Tensor values =
-        torch::ones({3, 5, 6, 7},
-                    torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor params = isFloatingType(scalar_type)
+        ? torch::rand(
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor values = torch::ones(
+        {3, 5, 6, 7},
+        torch::TensorOptions(scalar_type).device(DefaultDevice()));
     for (bool accumulate : {false, true}) {
       if (accumulate && IsCuda()) {
         GTEST_SKIP();
@@ -5052,22 +5295,30 @@ TEST_F(LazyOpsTest, TestOneIndexPutTransfer) {
 
 TEST_F(LazyOpsTest, TestMultiIndexPut) {
   torch::Tensor indices_0 = torch::randint(
-      -3, 3, {2, 4, 3},
+      -3,
+      3,
+      {2, 4, 3},
       torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   torch::Tensor indices_1 = torch::randint(
-      -3, 3, {2, 4, 3},
+      -3,
+      3,
+      {2, 4, 3},
       torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor params =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor params = isFloatingType(scalar_type)
+        ? torch::rand(
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor values = torch::ones(
         {5, 6, 7}, torch::TensorOptions(scalar_type).device(DefaultDevice()));
     for (bool accumulate : {false, true}) {
@@ -5082,7 +5333,10 @@ TEST_F(LazyOpsTest, TestMultiIndexPut) {
         torch::Tensor lazy_indices_1 = CopyToDevice(indices_1, device);
         torch::Tensor lazy_values = CopyToDevice(values, device);
         torch::Tensor lazy_result = torch::index_put(
-            lazy_params, {lazy_indices_0, lazy_indices_1}, lazy_values, accumulate);
+            lazy_params,
+            {lazy_indices_0, lazy_indices_1},
+            lazy_values,
+            accumulate);
         AllEqual(result, lazy_result);
       });
     }
@@ -5091,23 +5345,31 @@ TEST_F(LazyOpsTest, TestMultiIndexPut) {
 
 TEST_F(LazyOpsTest, TestMultiIndexPutHeadNull) {
   torch::Tensor indices_0 = torch::randint(
-      -3, 3, {2, 4, 3},
+      -3,
+      3,
+      {2, 4, 3},
       torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   torch::Tensor indices_null;
   torch::Tensor indices_1 = torch::randint(
-      -3, 3, {2, 4, 3},
+      -3,
+      3,
+      {2, 4, 3},
       torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor params =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {4, 3, 3, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {4, 3, 3, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor params = isFloatingType(scalar_type)
+        ? torch::rand(
+              {4, 3, 3, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {4, 3, 3, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor values = torch::ones(
         {3, 6, 7}, torch::TensorOptions(scalar_type).device(DefaultDevice()));
     for (bool accumulate : {false, true}) {
@@ -5122,8 +5384,10 @@ TEST_F(LazyOpsTest, TestMultiIndexPutHeadNull) {
         torch::Tensor lazy_indices_1 = CopyToDevice(indices_1, device);
         torch::Tensor lazy_values = CopyToDevice(values, device);
         torch::Tensor lazy_result = torch::index_put(
-            lazy_params, {indices_null, lazy_indices_0, lazy_indices_1},
-            lazy_values, accumulate);
+            lazy_params,
+            {indices_null, lazy_indices_0, lazy_indices_1},
+            lazy_values,
+            accumulate);
         AllEqual(result, lazy_result);
       });
     }
@@ -5132,23 +5396,31 @@ TEST_F(LazyOpsTest, TestMultiIndexPutHeadNull) {
 
 TEST_F(LazyOpsTest, TestMultiIndexPutMiddleNull) {
   torch::Tensor indices_0 = torch::randint(
-      -3, 3, {2, 4, 3},
+      -3,
+      3,
+      {2, 4, 3},
       torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   torch::Tensor indices_null;
   torch::Tensor indices_1 = torch::randint(
-      -3, 3, {2, 4, 3},
+      -3,
+      3,
+      {2, 4, 3},
       torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor params =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {4, 3, 3, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {4, 3, 3, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor params = isFloatingType(scalar_type)
+        ? torch::rand(
+              {4, 3, 3, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {4, 3, 3, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor values = torch::ones(
         {3, 6, 7}, torch::TensorOptions(scalar_type).device(DefaultDevice()));
     for (bool accumulate : {false, true}) {
@@ -5163,8 +5435,10 @@ TEST_F(LazyOpsTest, TestMultiIndexPutMiddleNull) {
         torch::Tensor lazy_indices_1 = CopyToDevice(indices_1, device);
         torch::Tensor lazy_values = CopyToDevice(values, device);
         torch::Tensor lazy_result = torch::index_put(
-            lazy_params, {lazy_indices_0, indices_null, lazy_indices_1},
-            lazy_values, accumulate);
+            lazy_params,
+            {lazy_indices_0, indices_null, lazy_indices_1},
+            lazy_values,
+            accumulate);
         AllEqual(result, lazy_result);
       });
     }
@@ -5173,23 +5447,31 @@ TEST_F(LazyOpsTest, TestMultiIndexPutMiddleNull) {
 
 TEST_F(LazyOpsTest, TestMultiIndexPutTailNull) {
   torch::Tensor indices_0 = torch::randint(
-      -3, 3, {2, 4, 3},
+      -3,
+      3,
+      {2, 4, 3},
       torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   torch::Tensor indices_1 = torch::randint(
-      -3, 3, {2, 4, 3},
+      -3,
+      3,
+      {2, 4, 3},
       torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   torch::Tensor indices_null;
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor params =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {4, 3, 3, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {4, 3, 3, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor params = isFloatingType(scalar_type)
+        ? torch::rand(
+              {4, 3, 3, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {4, 3, 3, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor values = torch::ones(
         {3, 6, 7}, torch::TensorOptions(scalar_type).device(DefaultDevice()));
     for (bool accumulate : {false, true}) {
@@ -5204,8 +5486,10 @@ TEST_F(LazyOpsTest, TestMultiIndexPutTailNull) {
         torch::Tensor lazy_indices_1 = CopyToDevice(indices_1, device);
         torch::Tensor lazy_values = CopyToDevice(values, device);
         torch::Tensor lazy_result = torch::index_put(
-            lazy_params, {lazy_indices_0, lazy_indices_1, indices_null},
-            lazy_values, accumulate);
+            lazy_params,
+            {lazy_indices_0, lazy_indices_1, indices_null},
+            lazy_values,
+            accumulate);
         AllEqual(result, lazy_result);
       });
     }
@@ -5214,22 +5498,30 @@ TEST_F(LazyOpsTest, TestMultiIndexPutTailNull) {
 
 TEST_F(LazyOpsTest, TestMultiIndexPutMiddleBroadcast) {
   torch::Tensor indices_0 = torch::randint(
-      -3, 3, {2, 4, 3},
+      -3,
+      3,
+      {2, 4, 3},
       torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   torch::Tensor indices_1 = torch::randint(
-      -3, 3, {2, 1, 3},
+      -3,
+      3,
+      {2, 1, 3},
       torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor params =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor params = isFloatingType(scalar_type)
+        ? torch::rand(
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor values = torch::ones(
         {5, 6, 7}, torch::TensorOptions(scalar_type).device(DefaultDevice()));
     for (bool accumulate : {false, true}) {
@@ -5244,7 +5536,10 @@ TEST_F(LazyOpsTest, TestMultiIndexPutMiddleBroadcast) {
         torch::Tensor lazy_indices_1 = CopyToDevice(indices_1, device);
         torch::Tensor lazy_values = CopyToDevice(values, device);
         torch::Tensor lazy_result = torch::index_put(
-            lazy_params, {lazy_indices_0, lazy_indices_1}, lazy_values, accumulate);
+            lazy_params,
+            {lazy_indices_0, lazy_indices_1},
+            lazy_values,
+            accumulate);
         AllEqual(result, lazy_result);
       });
     }
@@ -5253,22 +5548,30 @@ TEST_F(LazyOpsTest, TestMultiIndexPutMiddleBroadcast) {
 
 TEST_F(LazyOpsTest, TestMultiIndexPutTailBroadcast) {
   torch::Tensor indices_0 = torch::randint(
-      -3, 3, {2, 1, 3},
+      -3,
+      3,
+      {2, 1, 3},
       torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   torch::Tensor indices_1 = torch::randint(
-      -3, 3, {2, 1},
+      -3,
+      3,
+      {2, 1},
       torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor params =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {4, 3, 5, 6, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor params = isFloatingType(scalar_type)
+        ? torch::rand(
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {4, 3, 5, 6, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor values = torch::ones(
         {5, 6, 7}, torch::TensorOptions(scalar_type).device(DefaultDevice()));
     for (bool accumulate : {false, true}) {
@@ -5283,7 +5586,10 @@ TEST_F(LazyOpsTest, TestMultiIndexPutTailBroadcast) {
         torch::Tensor lazy_indices_1 = CopyToDevice(indices_1, device);
         torch::Tensor lazy_values = CopyToDevice(values, device);
         torch::Tensor lazy_result = torch::index_put(
-            lazy_params, {lazy_indices_0, lazy_indices_1}, lazy_values, accumulate);
+            lazy_params,
+            {lazy_indices_0, lazy_indices_1},
+            lazy_values,
+            accumulate);
         AllEqual(result, lazy_result);
       });
     }
@@ -5292,20 +5598,23 @@ TEST_F(LazyOpsTest, TestMultiIndexPutTailBroadcast) {
 
 TEST_F(LazyOpsTest, TestMaskIndexPut) {
   torch::Tensor indices =
-      torch::tensor({0, 1},
-                    torch::TensorOptions(torch::kByte).device(DefaultDevice()))
+      torch::tensor(
+          {0, 1}, torch::TensorOptions(torch::kByte).device(DefaultDevice()))
           .to(torch::kBool);
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor params =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {2, 2},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {2, 2},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor params = isFloatingType(scalar_type)
+        ? torch::rand(
+              {2, 2}, torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {2, 2},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor values = torch::ones(
         {2}, torch::TensorOptions(scalar_type).device(DefaultDevice()));
     for (bool accumulate : {false, true}) {
@@ -5315,8 +5624,8 @@ TEST_F(LazyOpsTest, TestMaskIndexPut) {
         torch::Tensor lazy_params = CopyToDevice(params, device);
         torch::Tensor lazy_indices = CopyToDevice(indices, device);
         torch::Tensor lazy_values = CopyToDevice(values, device);
-        torch::Tensor lazy_result =
-            torch::index_put(lazy_params, {lazy_indices}, lazy_values, accumulate);
+        torch::Tensor lazy_result = torch::index_put(
+            lazy_params, {lazy_indices}, lazy_values, accumulate);
         AllEqual(result, lazy_result);
       });
     }
@@ -5325,34 +5634,44 @@ TEST_F(LazyOpsTest, TestMaskIndexPut) {
 
 TEST_F(LazyOpsTest, TestIndexPutImpl) {
   torch::Tensor indices = torch::randint(
-      -3, 3, {2, 4, 3},
+      -3,
+      3,
+      {2, 4, 3},
       torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor values =
-        torch::ones({3, 5, 6, 7},
-                    torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor values = torch::ones(
+        {3, 5, 6, 7},
+        torch::TensorOptions(scalar_type).device(DefaultDevice()));
     for (bool accumulate : {false, true}) {
       if (accumulate && IsCuda()) {
         GTEST_SKIP();
       }
       ForEachDevice([&](const torch::Device& device) {
-        torch::Tensor params =
-            isFloatingType(scalar_type)
-                ? torch::rand(
-                      {4, 3, 5, 6, 7},
-                      torch::TensorOptions(scalar_type).device(DefaultDevice()))
-                : torch::randint(100, {4, 3, 5, 6, 7},
-                                 torch::TensorOptions(scalar_type)
-                                     .device(DefaultDevice()));
+        torch::Tensor params = isFloatingType(scalar_type)
+            ? torch::rand(
+                  {4, 3, 5, 6, 7},
+                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
+            : torch::randint(
+                  100,
+                  {4, 3, 5, 6, 7},
+                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
         torch::Tensor lazy_params = CopyToDevice(params.clone(), device);
         torch::Tensor result = torch::_index_put_impl_(
             params, {indices}, values, accumulate, /*unsafe=*/true);
         torch::Tensor lazy_indices = CopyToDevice(indices, device);
         torch::Tensor lazy_values = CopyToDevice(values, device);
         torch::Tensor lazy_result = torch::_index_put_impl_(
-            lazy_params, {lazy_indices}, lazy_values, accumulate, /*unsafe=*/true);
+            lazy_params,
+            {lazy_indices},
+            lazy_values,
+            accumulate,
+            /*unsafe=*/true);
         AllEqual(result, lazy_result);
         AllEqual(params, lazy_params);
       });
@@ -5365,16 +5684,20 @@ TEST_F(LazyOpsTest, TestIndexFillWithScalar) {
       {0, 2}, torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   torch::Scalar value = 42;
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor base =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {3, 4, 5},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {3, 4, 5},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor base = isFloatingType(scalar_type)
+        ? torch::rand(
+              {3, 4, 5},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {3, 4, 5},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     int rank = base.dim();
     for (int dim = -rank; dim < rank; ++dim) {
       torch::Tensor result = torch::index_fill(base, dim, index, value);
@@ -5395,22 +5718,27 @@ TEST_F(LazyOpsTest, TestIndexFillWithScalarInPlace) {
   torch::Scalar value = 42;
   int rank = 3;
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
     for (int dim = -rank; dim < rank; ++dim) {
       ForEachDevice([&](const torch::Device& device) {
-        torch::Tensor base =
-            isFloatingType(scalar_type)
-                ? torch::rand(
-                      {3, 4, 5},
-                      torch::TensorOptions(scalar_type).device(DefaultDevice()))
-                : torch::randint(100, {3, 4, 5},
-                                 torch::TensorOptions(scalar_type)
-                                     .device(DefaultDevice()));
+        torch::Tensor base = isFloatingType(scalar_type)
+            ? torch::rand(
+                  {3, 4, 5},
+                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
+            : torch::randint(
+                  100,
+                  {3, 4, 5},
+                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
         torch::Tensor lazy_base = CopyToDevice(base.clone(), device);
         torch::Tensor result = base.index_fill_(dim, index, value);
         torch::Tensor lazy_index = CopyToDevice(index, device);
-        torch::Tensor lazy_result = lazy_base.index_fill_(dim, lazy_index, value);
+        torch::Tensor lazy_result =
+            lazy_base.index_fill_(dim, lazy_index, value);
         AllEqual(result, lazy_result);
         AllEqual(base, lazy_base);
       });
@@ -5422,16 +5750,20 @@ TEST_F(LazyOpsTest, TestIndexFillWithTensor) {
   torch::Tensor index = torch::tensor(
       {0, 2}, torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor base =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {3, 4, 5},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {3, 4, 5},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor base = isFloatingType(scalar_type)
+        ? torch::rand(
+              {3, 4, 5},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {3, 4, 5},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor value = torch::scalar_tensor(
         42, torch::TensorOptions(scalar_type).device(DefaultDevice()));
     int rank = base.dim();
@@ -5453,21 +5785,25 @@ TEST_F(LazyOpsTest, TestIndexFillWithTensorInPlace) {
   torch::Tensor index = torch::tensor(
       {0, 2}, torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
     torch::Tensor value = torch::scalar_tensor(
         42, torch::TensorOptions(scalar_type).device(DefaultDevice()));
     int rank = 3;
     for (int dim = -rank; dim < rank; ++dim) {
       ForEachDevice([&](const torch::Device& device) {
-        torch::Tensor base =
-            isFloatingType(scalar_type)
-                ? torch::rand(
-                      {3, 4, 5},
-                      torch::TensorOptions(scalar_type).device(DefaultDevice()))
-                : torch::randint(100, {3, 4, 5},
-                                 torch::TensorOptions(scalar_type)
-                                     .device(DefaultDevice()));
+        torch::Tensor base = isFloatingType(scalar_type)
+            ? torch::rand(
+                  {3, 4, 5},
+                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
+            : torch::randint(
+                  100,
+                  {3, 4, 5},
+                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
         torch::Tensor lazy_base = CopyToDevice(base.clone(), device);
         torch::Tensor result = base.index_fill_(dim, index, value);
         torch::Tensor lazy_index = CopyToDevice(index, device);
@@ -5485,16 +5821,20 @@ TEST_F(LazyOpsTest, TestIndexFillRank0) {
   torch::Tensor index = torch::scalar_tensor(
       2, torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor base =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {3, 4, 5},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {3, 4, 5},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor base = isFloatingType(scalar_type)
+        ? torch::rand(
+              {3, 4, 5},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {3, 4, 5},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     torch::Tensor value = torch::scalar_tensor(
         42, torch::TensorOptions(scalar_type).device(DefaultDevice()));
     int rank = base.dim();
@@ -5515,34 +5855,40 @@ TEST_F(LazyOpsTest, TestIndexFillRank0) {
 TEST_F(LazyOpsTest, TestIndexAdd) {
   int index_size = 10;
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor base =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {5, 3, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {5, 3, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor base = isFloatingType(scalar_type)
+        ? torch::rand(
+              {5, 3, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {5, 3, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     int rank = base.dim();
     for (int dim = -rank; dim < rank; ++dim) {
       for (torch::ScalarType index_scalar_type : {torch::kInt, torch::kLong}) {
         torch::Tensor index = torch::randint(
-            0, base.size(dim), {index_size},
+            0,
+            base.size(dim),
+            {index_size},
             torch::TensorOptions(index_scalar_type).device(DefaultDevice()));
-        std::vector<int64_t> value_sizes(base.sizes().begin(),
-                                         base.sizes().end());
+        std::vector<int64_t> value_sizes(
+            base.sizes().begin(), base.sizes().end());
         int canonical_dim = dim < 0 ? dim + rank : dim;
         value_sizes[canonical_dim] = index_size;
-        torch::Tensor value =
-            isFloatingType(scalar_type)
-                ? torch::rand(
-                      value_sizes,
-                      torch::TensorOptions(scalar_type).device(DefaultDevice()))
-                : torch::randint(100, value_sizes,
-                                 torch::TensorOptions(scalar_type)
-                                     .device(DefaultDevice()));
+        torch::Tensor value = isFloatingType(scalar_type)
+            ? torch::rand(
+                  value_sizes,
+                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
+            : torch::randint(
+                  100,
+                  value_sizes,
+                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
         torch::Tensor result = torch::index_add(base, dim, index, value);
         ForEachDevice([&](const torch::Device& device) {
           torch::Tensor lazy_base = CopyToDevice(base, device);
@@ -5561,33 +5907,39 @@ TEST_F(LazyOpsTest, TestIndexAddInPlace) {
   int index_size = 10;
   int rank = 3;
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
     for (int dim = -rank; dim < rank; ++dim) {
       ForEachDevice([&](const torch::Device& device) {
-        torch::Tensor base =
-            isFloatingType(scalar_type)
-                ? torch::rand(
-                      {5, 3, 7},
-                      torch::TensorOptions(scalar_type).device(DefaultDevice()))
-                : torch::randint(100, {5, 3, 7},
-                                 torch::TensorOptions(scalar_type)
-                                     .device(DefaultDevice()));
+        torch::Tensor base = isFloatingType(scalar_type)
+            ? torch::rand(
+                  {5, 3, 7},
+                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
+            : torch::randint(
+                  100,
+                  {5, 3, 7},
+                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
         torch::Tensor index = torch::randint(
-            0, base.size(dim), {index_size},
+            0,
+            base.size(dim),
+            {index_size},
             torch::TensorOptions(torch::kLong).device(DefaultDevice()));
-        std::vector<int64_t> value_sizes(base.sizes().begin(),
-                                         base.sizes().end());
+        std::vector<int64_t> value_sizes(
+            base.sizes().begin(), base.sizes().end());
         int canonical_dim = dim < 0 ? dim + rank : dim;
         value_sizes[canonical_dim] = index_size;
-        torch::Tensor value =
-            isFloatingType(scalar_type)
-                ? torch::rand(
-                      value_sizes,
-                      torch::TensorOptions(scalar_type).device(DefaultDevice()))
-                : torch::randint(100, value_sizes,
-                                 torch::TensorOptions(scalar_type)
-                                     .device(DefaultDevice()));
+        torch::Tensor value = isFloatingType(scalar_type)
+            ? torch::rand(
+                  value_sizes,
+                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
+            : torch::randint(
+                  100,
+                  value_sizes,
+                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
         torch::Tensor lazy_base = CopyToDevice(base.clone(), device);
         torch::Tensor result = base.index_add_(dim, index, value);
         torch::Tensor lazy_index = CopyToDevice(index, device);
@@ -5603,33 +5955,39 @@ TEST_F(LazyOpsTest, TestIndexAddInPlace) {
 
 TEST_F(LazyOpsTest, TestIndexAddRank0) {
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor base =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {5, 3, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {5, 3, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor base = isFloatingType(scalar_type)
+        ? torch::rand(
+              {5, 3, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {5, 3, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     int rank = base.dim();
     for (int dim = -rank; dim < rank; ++dim) {
       torch::Tensor index = torch::randint(
-          0, base.size(dim), at::IntArrayRef{},
+          0,
+          base.size(dim),
+          at::IntArrayRef{},
           torch::TensorOptions(torch::kLong).device(DefaultDevice()));
-      std::vector<int64_t> value_sizes(base.sizes().begin(),
-                                       base.sizes().end());
+      std::vector<int64_t> value_sizes(
+          base.sizes().begin(), base.sizes().end());
       int canonical_dim = dim < 0 ? dim + rank : dim;
       value_sizes[canonical_dim] = 1;
-      torch::Tensor value =
-          isFloatingType(scalar_type)
-              ? torch::rand(
-                    value_sizes,
-                    torch::TensorOptions(scalar_type).device(DefaultDevice()))
-              : torch::randint(
-                    100, value_sizes,
-                    torch::TensorOptions(scalar_type).device(DefaultDevice()));
+      torch::Tensor value = isFloatingType(scalar_type)
+          ? torch::rand(
+                value_sizes,
+                torch::TensorOptions(scalar_type).device(DefaultDevice()))
+          : torch::randint(
+                100,
+                value_sizes,
+                torch::TensorOptions(scalar_type).device(DefaultDevice()));
       torch::Tensor result = torch::index_add(base, dim, index, value);
       ForEachDevice([&](const torch::Device& device) {
         torch::Tensor lazy_base = CopyToDevice(base, device);
@@ -5645,29 +6003,33 @@ TEST_F(LazyOpsTest, TestIndexAddRank0) {
 
 TEST_F(LazyOpsTest, TestIndexCopy) {
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor base =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {5, 3, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {5, 3, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor base = isFloatingType(scalar_type)
+        ? torch::rand(
+              {5, 3, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {5, 3, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     int rank = base.dim();
     for (int dim = -rank; dim < rank; ++dim) {
       torch::Tensor index = torch::randperm(
           base.size(dim),
           torch::TensorOptions(torch::kLong).device(DefaultDevice()));
-      torch::Tensor value =
-          isFloatingType(scalar_type)
-              ? torch::rand(
-                    base.sizes(),
-                    torch::TensorOptions(scalar_type).device(DefaultDevice()))
-              : torch::randint(
-                    100, base.sizes(),
-                    torch::TensorOptions(scalar_type).device(DefaultDevice()));
+      torch::Tensor value = isFloatingType(scalar_type)
+          ? torch::rand(
+                base.sizes(),
+                torch::TensorOptions(scalar_type).device(DefaultDevice()))
+          : torch::randint(
+                100,
+                base.sizes(),
+                torch::TensorOptions(scalar_type).device(DefaultDevice()));
       torch::Tensor result = torch::index_copy(base, dim, index, value);
       ForEachDevice([&](const torch::Device& device) {
         torch::Tensor lazy_base = CopyToDevice(base, device);
@@ -5688,33 +6050,39 @@ TEST_F(LazyOpsTest, TestIndexCopyInPlace) {
   int index_size = 10;
   int rank = 3;
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
     for (int dim = -rank; dim < rank; ++dim) {
       ForEachDevice([&](const torch::Device& device) {
-        torch::Tensor base =
-            isFloatingType(scalar_type)
-                ? torch::rand(
-                      {5, 3, 7},
-                      torch::TensorOptions(scalar_type).device(DefaultDevice()))
-                : torch::randint(100, {5, 3, 7},
-                                 torch::TensorOptions(scalar_type)
-                                     .device(DefaultDevice()));
+        torch::Tensor base = isFloatingType(scalar_type)
+            ? torch::rand(
+                  {5, 3, 7},
+                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
+            : torch::randint(
+                  100,
+                  {5, 3, 7},
+                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
         torch::Tensor index = torch::randint(
-            0, base.size(dim), {index_size},
+            0,
+            base.size(dim),
+            {index_size},
             torch::TensorOptions(torch::kLong).device(DefaultDevice()));
-        std::vector<int64_t> value_sizes(base.sizes().begin(),
-                                         base.sizes().end());
+        std::vector<int64_t> value_sizes(
+            base.sizes().begin(), base.sizes().end());
         int canonical_dim = dim < 0 ? dim + rank : dim;
         value_sizes[canonical_dim] = index_size;
-        torch::Tensor value =
-            isFloatingType(scalar_type)
-                ? torch::rand(
-                      value_sizes,
-                      torch::TensorOptions(scalar_type).device(DefaultDevice()))
-                : torch::randint(100, value_sizes,
-                                 torch::TensorOptions(scalar_type)
-                                     .device(DefaultDevice()));
+        torch::Tensor value = isFloatingType(scalar_type)
+            ? torch::rand(
+                  value_sizes,
+                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
+            : torch::randint(
+                  100,
+                  value_sizes,
+                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
         torch::Tensor lazy_base = CopyToDevice(base.clone(), device);
         torch::Tensor result = base.index_copy_(dim, index, value);
         torch::Tensor lazy_index = CopyToDevice(index, device);
@@ -5730,33 +6098,39 @@ TEST_F(LazyOpsTest, TestIndexCopyInPlace) {
 
 TEST_F(LazyOpsTest, TestIndexCopyRank0) {
   for (torch::ScalarType scalar_type :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor base =
-        isFloatingType(scalar_type)
-            ? torch::rand(
-                  {5, 3, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()))
-            : torch::randint(
-                  100, {5, 3, 7},
-                  torch::TensorOptions(scalar_type).device(DefaultDevice()));
+    torch::Tensor base = isFloatingType(scalar_type)
+        ? torch::rand(
+              {5, 3, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()))
+        : torch::randint(
+              100,
+              {5, 3, 7},
+              torch::TensorOptions(scalar_type).device(DefaultDevice()));
     int rank = base.dim();
     for (int dim = -rank; dim < rank; ++dim) {
       torch::Tensor index = torch::randint(
-          0, base.size(dim), at::IntArrayRef{},
+          0,
+          base.size(dim),
+          at::IntArrayRef{},
           torch::TensorOptions(torch::kLong).device(DefaultDevice()));
-      std::vector<int64_t> value_sizes(base.sizes().begin(),
-                                       base.sizes().end());
+      std::vector<int64_t> value_sizes(
+          base.sizes().begin(), base.sizes().end());
       int canonical_dim = dim < 0 ? dim + rank : dim;
       value_sizes[canonical_dim] = 1;
-      torch::Tensor value =
-          isFloatingType(scalar_type)
-              ? torch::rand(
-                    value_sizes,
-                    torch::TensorOptions(scalar_type).device(DefaultDevice()))
-              : torch::randint(
-                    100, value_sizes,
-                    torch::TensorOptions(scalar_type).device(DefaultDevice()));
+      torch::Tensor value = isFloatingType(scalar_type)
+          ? torch::rand(
+                value_sizes,
+                torch::TensorOptions(scalar_type).device(DefaultDevice()))
+          : torch::randint(
+                100,
+                value_sizes,
+                torch::TensorOptions(scalar_type).device(DefaultDevice()));
       torch::Tensor result = torch::index_copy(base, dim, index, value);
       ForEachDevice([&](const torch::Device& device) {
         torch::Tensor lazy_base = CopyToDevice(base, device);
@@ -5771,9 +6145,9 @@ TEST_F(LazyOpsTest, TestIndexCopyRank0) {
 }
 
 TEST_F(LazyOpsTest, TestRelu) {
-  torch::Tensor input =
-      torch::rand({2, 1, 4, 6},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 1, 4, 6},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor output = torch::relu(input);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -5783,9 +6157,9 @@ TEST_F(LazyOpsTest, TestRelu) {
 }
 
 TEST_F(LazyOpsTest, TestReluInPlace) {
-  torch::Tensor input =
-      torch::rand({2, 1, 4, 6},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 1, 4, 6},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     torch::Tensor output = torch::relu_(input);
@@ -5834,10 +6208,14 @@ TEST_F(LazyOpsTest, TestHardSigmoidBackward) {
     return torch::hardsigmoid(inputs[0]);
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::randn({10}, torch::TensorOptions(torch::kFloat)
-                                         .device(DefaultDevice())
-                                         .requires_grad(true))},
-                 device, testfn);
+    TestBackward(
+        {torch::randn(
+            {10},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn);
   });
 }
 
@@ -5876,9 +6254,9 @@ TEST_F(LazyOpsTest, TestHardtanhInPlace) {
 }
 
 TEST_F(LazyOpsTest, TestLeakyRelu) {
-  torch::Tensor input =
-      torch::rand({2, 1, 4, 6},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 1, 4, 6},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   double negative_slope = 0.01;
   torch::Tensor output = torch::leaky_relu(input, negative_slope);
   ForEachDevice([&](const torch::Device& device) {
@@ -5889,9 +6267,9 @@ TEST_F(LazyOpsTest, TestLeakyRelu) {
 }
 
 TEST_F(LazyOpsTest, TestLeakyReluInPlace) {
-  torch::Tensor input =
-      torch::rand({2, 1, 4, 6},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 1, 4, 6},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   double negative_slope = 0.01;
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -6127,8 +6505,8 @@ TEST_F(LazyOpsTest, TestPowIntExponent) {
 
 TEST_F(LazyOpsTest, TestFmodScalar) {
   torch::Tensor a =
-      torch::rand({2, 2},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
+      torch::rand(
+          {2, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
       100.0;
   torch::Scalar divisor = 2.0;
   torch::Tensor b = torch::fmod(a, divisor);
@@ -6157,12 +6535,12 @@ TEST_F(LazyOpsTest, TestFmodScalarInPlace) {
 
 TEST_F(LazyOpsTest, TestFmodTensor) {
   torch::Tensor a =
-      torch::rand({2, 2},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
+      torch::rand(
+          {2, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
       100.0;
   torch::Tensor b =
-      torch::rand({2, 2},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
+      torch::rand(
+          {2, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
       10.0;
   torch::Tensor c = torch::fmod(a, b);
   ForEachDevice([&](const torch::Device& device) {
@@ -6175,8 +6553,8 @@ TEST_F(LazyOpsTest, TestFmodTensor) {
 
 TEST_F(LazyOpsTest, TestFmodTensorInPlace) {
   torch::Tensor b =
-      torch::rand({2, 2},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
+      torch::rand(
+          {2, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice())) *
       10.0;
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor a =
@@ -6306,9 +6684,9 @@ TEST_F(LazyOpsTest, TestWhereBroadcast) {
 }
 
 TEST_F(LazyOpsTest, TestThreshold) {
-  torch::Tensor input =
-      torch::rand({2, 1, 4, 6},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 1, 4, 6},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   float threshold = 0.4;
   float value = 20;
   torch::Tensor output = torch::threshold(input, threshold, value);
@@ -6323,22 +6701,27 @@ TEST_F(LazyOpsTest, TestThresholdBackward) {
   float threshold = 0.4;
   float value = 20;
 
-  auto testFunction = [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
+  auto testFunction =
+      [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
     return torch::threshold(inputs[0], threshold, value);
   };
 
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::rand({2, 1, 4, 6}, torch::TensorOptions(torch::kFloat)
-                                                .device(DefaultDevice())
-                                                .requires_grad(true))},
-                 device, testFunction);
+    TestBackward(
+        {torch::rand(
+            {2, 1, 4, 6},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testFunction);
   });
 }
 
 TEST_F(LazyOpsTest, TestThresholdInPlace) {
-  torch::Tensor input =
-      torch::rand({2, 1, 4, 6},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 1, 4, 6},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor output = input.clone();
   float threshold = 0.4;
   float value = 20;
@@ -6351,24 +6734,25 @@ TEST_F(LazyOpsTest, TestThresholdInPlace) {
 }
 
 TEST_F(LazyOpsTest, TestElu) {
-  torch::Tensor input =
-      torch::rand({2, 1, 4, 6},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 1, 4, 6},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Scalar alpha = 0.5;
   torch::Scalar scale = 2.5;
   torch::Scalar input_scale = 1.5;
   torch::Tensor output = torch::elu(input, alpha, scale, input_scale);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
-    torch::Tensor lazy_output = torch::elu(lazy_input, alpha, scale, input_scale);
+    torch::Tensor lazy_output =
+        torch::elu(lazy_input, alpha, scale, input_scale);
     AllClose(output, lazy_output);
   });
 }
 
 TEST_F(LazyOpsTest, TestEluInPlace) {
-  torch::Tensor input =
-      torch::rand({2, 1, 4, 6},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 1, 4, 6},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Scalar alpha = 0.5;
   torch::Scalar scale = 2.5;
   torch::Scalar input_scale = 1.5;
@@ -6383,9 +6767,9 @@ TEST_F(LazyOpsTest, TestEluInPlace) {
 }
 
 TEST_F(LazyOpsTest, TestSelu) {
-  torch::Tensor input =
-      torch::rand({2, 1, 4, 6},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 1, 4, 6},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor output = torch::selu(input);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -6395,9 +6779,9 @@ TEST_F(LazyOpsTest, TestSelu) {
 }
 
 TEST_F(LazyOpsTest, TestSeluInPlace) {
-  torch::Tensor input =
-      torch::rand({2, 1, 4, 6},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 1, 4, 6},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     torch::Tensor output = torch::selu_(input);
@@ -6408,9 +6792,9 @@ TEST_F(LazyOpsTest, TestSeluInPlace) {
 }
 
 TEST_F(LazyOpsTest, TestCelu) {
-  torch::Tensor input =
-      torch::rand({2, 1, 4, 6},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 1, 4, 6},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Scalar alpha = 2.5;
   torch::Tensor output = torch::celu(input, alpha);
   ForEachDevice([&](const torch::Device& device) {
@@ -6421,9 +6805,9 @@ TEST_F(LazyOpsTest, TestCelu) {
 }
 
 TEST_F(LazyOpsTest, TestCeluInPlace) {
-  torch::Tensor input =
-      torch::rand({2, 1, 4, 6},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 1, 4, 6},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Scalar alpha = 2.5;
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -6449,12 +6833,12 @@ TEST_F(LazyOpsTest, TestAddMatMul) {
   int in_channels = 32;
   int out_channels = 320;
   int labels = 50;
-  torch::Tensor input =
-      torch::rand({in_channels, out_channels},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor weight =
-      torch::rand({out_channels, labels},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {in_channels, out_channels},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor weight = torch::rand(
+      {out_channels, labels},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor bias = torch::rand(
       {labels}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   // Test beta != 1. through the CPU interop.
@@ -6475,17 +6859,25 @@ TEST_F(LazyOpsTest, TestEmbedding) {
   torch::Tensor a = torch::rand(
       {32, 4}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor i = torch::randint(
-      0, 31, {3, 4},
+      0,
+      31,
+      {3, 4},
       torch::TensorOptions(torch::kLong).device(DefaultDevice()));
-  torch::Tensor b =
-      torch::embedding(a, i, /*padding_idx=*/0, /*scale_grad_by_freq=*/false,
-                       /*sparse=*/false);
+  torch::Tensor b = torch::embedding(
+      a,
+      i,
+      /*padding_idx=*/0,
+      /*scale_grad_by_freq=*/false,
+      /*sparse=*/false);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_a = CopyToDevice(a, device);
     torch::Tensor lazy_i = CopyToDevice(i, device);
-    torch::Tensor lazy_b = torch::embedding(lazy_a, lazy_i, /*padding_idx=*/0,
-                                           /*scale_grad_by_freq=*/false,
-                                           /*sparse=*/false);
+    torch::Tensor lazy_b = torch::embedding(
+        lazy_a,
+        lazy_i,
+        /*padding_idx=*/0,
+        /*scale_grad_by_freq=*/false,
+        /*sparse=*/false);
     AllClose(b, lazy_b);
   });
 }
@@ -6493,7 +6885,9 @@ TEST_F(LazyOpsTest, TestEmbedding) {
 TEST_F(LazyOpsTest, TestOneHot) {
   int num_classes = 5;
   torch::Tensor input = torch::randint(
-      0, num_classes, {10},
+      0,
+      num_classes,
+      {10},
       torch::TensorOptions(torch::kLong).device(DefaultDevice()));
   torch::Tensor output = torch::one_hot(input, num_classes);
   ForEachDevice([&](const torch::Device& device) {
@@ -6528,9 +6922,9 @@ TEST_F(LazyOpsTest, TestTransposeInPlace) {
 }
 
 TEST_F(LazyOpsTest, TestReshape) {
-  torch::Tensor input =
-      torch::rand({32, 20, 4, 4},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {32, 20, 4, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor output = torch::reshape(input, {-1, 320});
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -6569,9 +6963,9 @@ TEST_F(LazyOpsTest, TestViewResize) {
 }
 
 TEST_F(LazyOpsTest, TestView) {
-  torch::Tensor input =
-      torch::rand({32, 20, 4, 4},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {32, 20, 4, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor output = input.view({-1, 320});
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -6581,9 +6975,9 @@ TEST_F(LazyOpsTest, TestView) {
 }
 
 TEST_F(LazyOpsTest, TestViewMod) {
-  torch::Tensor input =
-      torch::zeros({32, 20, 4, 4},
-                   torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::zeros(
+      {32, 20, 4, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor one = torch::tensor(
       1.0, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor output = input.view({-1, 320});
@@ -6604,9 +6998,9 @@ TEST_F(LazyOpsTest, TestViewMod) {
 }
 
 TEST_F(LazyOpsTest, TestViewModComplex) {
-  torch::Tensor input =
-      torch::zeros({32, 20, 4, 4},
-                   torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::zeros(
+      {32, 20, 4, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor one = torch::tensor(
       1.0, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor output1 = input.view({-1, 320});
@@ -6629,9 +7023,9 @@ TEST_F(LazyOpsTest, TestViewModComplex) {
 }
 
 TEST_F(LazyOpsTest, TestViewOfViewMod) {
-  torch::Tensor input =
-      torch::zeros({32, 20, 4, 4},
-                   torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::zeros(
+      {32, 20, 4, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor one = torch::tensor(
       1.0, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor output1 = input.view({-1, 320});
@@ -6675,9 +7069,9 @@ TEST_F(LazyOpsTest, TestViewSqueezeAddInPlace) {
 }
 
 TEST_F(LazyOpsTest, TestUnsafeView) {
-  torch::Tensor input =
-      torch::rand({32, 20, 4, 4},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {32, 20, 4, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor output = torch::_unsafe_view(input, {-1, 320});
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -6687,9 +7081,9 @@ TEST_F(LazyOpsTest, TestUnsafeView) {
 }
 
 TEST_F(LazyOpsTest, TestNarrow) {
-  torch::Tensor a =
-      torch::rand({8, 10, 4, 4},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor a = torch::rand(
+      {8, 10, 4, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   for (int64_t dim : {1, -3}) {
     for (int64_t start : {2, -8}) {
       torch::Tensor b = a.narrow(dim, start, 6);
@@ -6849,9 +7243,9 @@ TEST_F(LazyOpsTest, TestNarrowCopy) {
 }
 
 TEST_F(LazyOpsTest, TestViewAs) {
-  torch::Tensor input =
-      torch::rand({32, 20, 4, 4},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {32, 20, 4, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor empty = torch::empty({32, 320});
   torch::Tensor output = input.view_as(empty);
   ForEachDevice([&](const torch::Device& device) {
@@ -6863,9 +7257,9 @@ TEST_F(LazyOpsTest, TestViewAs) {
 }
 
 TEST_F(LazyOpsTest, TestLogSoftmax) {
-  torch::Tensor input =
-      torch::rand({5, 3, 4, 2},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {5, 3, 4, 2},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     int rank = input.dim();
@@ -6878,9 +7272,9 @@ TEST_F(LazyOpsTest, TestLogSoftmax) {
 }
 
 TEST_F(LazyOpsTest, TestLogSoftmaxCast) {
-  torch::Tensor input =
-      torch::rand({5, 3, 4, 2},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {5, 3, 4, 2},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     int rank = input.dim();
@@ -6894,9 +7288,9 @@ TEST_F(LazyOpsTest, TestLogSoftmaxCast) {
 }
 
 TEST_F(LazyOpsTest, TestLogSoftmaxWrapper) {
-  torch::Tensor input =
-      torch::rand({10, 2, 6, 4},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {10, 2, 6, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     int rank = input.dim();
@@ -6911,9 +7305,9 @@ TEST_F(LazyOpsTest, TestLogSoftmaxWrapper) {
 }
 
 TEST_F(LazyOpsTest, TestSoftmax) {
-  torch::Tensor input =
-      torch::rand({10, 2, 6, 4},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {10, 2, 6, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     int rank = input.dim();
@@ -6926,24 +7320,25 @@ TEST_F(LazyOpsTest, TestSoftmax) {
 }
 
 TEST_F(LazyOpsTest, TestSoftmaxCast) {
-  torch::Tensor input =
-      torch::rand({10, 2, 6, 4},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {10, 2, 6, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     int rank = input.dim();
     for (int dim = -rank; dim < rank; ++dim) {
       torch::Tensor output = torch::softmax(input, dim, torch::kDouble);
-      torch::Tensor lazy_output = torch::softmax(lazy_input, dim, torch::kDouble);
+      torch::Tensor lazy_output =
+          torch::softmax(lazy_input, dim, torch::kDouble);
       AllClose(output, lazy_output, /*rtol=*/1e-3);
     }
   });
 }
 
 TEST_F(LazyOpsTest, TestSoftmaxWrapper) {
-  torch::Tensor input =
-      torch::rand({10, 2, 6, 4},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {10, 2, 6, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     int rank = input.dim();
@@ -6958,9 +7353,9 @@ TEST_F(LazyOpsTest, TestSoftmaxWrapper) {
 }
 
 TEST_F(LazyOpsTest, TestSoftplus) {
-  torch::Tensor input =
-      torch::rand({2, 1, 4, 6},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 1, 4, 6},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor output = torch::softplus(input);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -6979,20 +7374,22 @@ TEST_F(LazyOpsTest, TestMaxPool1D) {
       for (bool ceil_mode : {false, true}) {
         // Test dilation through the CPU interop.
         for (int dilation = 1; dilation <= 2; ++dilation) {
-          torch::Tensor output =
-              torch::max_pool1d(input, /*kernel_size=*/{kernel_size},
-                                /*stride=*/{stride},
-                                /*padding=*/{padding}, /*dilation=*/{dilation},
-                                /*ceil_mode=*/ceil_mode);
+          torch::Tensor output = torch::max_pool1d(
+              input,
+              /*kernel_size=*/{kernel_size},
+              /*stride=*/{stride},
+              /*padding=*/{padding},
+              /*dilation=*/{dilation},
+              /*ceil_mode=*/ceil_mode);
           ForEachDevice([&](const torch::Device& device) {
             torch::Tensor lazy_input = CopyToDevice(input, device);
-            torch::Tensor lazy_output =
-                torch::max_pool1d(lazy_input,
-                                  /*kernel_size=*/{kernel_size},
-                                  /*stride=*/{stride},
-                                  /*padding=*/{padding},
-                                  /*dilation=*/{dilation},
-                                  /*ceil_mode=*/ceil_mode);
+            torch::Tensor lazy_output = torch::max_pool1d(
+                lazy_input,
+                /*kernel_size=*/{kernel_size},
+                /*stride=*/{stride},
+                /*padding=*/{padding},
+                /*dilation=*/{dilation},
+                /*ceil_mode=*/ceil_mode);
             AllClose(output, lazy_output);
           });
         }
@@ -7002,9 +7399,9 @@ TEST_F(LazyOpsTest, TestMaxPool1D) {
 }
 
 TEST_F(LazyOpsTest, TestMaxPool2D) {
-  torch::Tensor input =
-      torch::rand({1, 4, 14, 14},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {1, 4, 14, 14},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   int kernel_size = 3;
   for (int stride = 1; stride <= 2; ++stride) {
     for (int padding = 0; padding <= 1; ++padding) {
@@ -7013,19 +7410,21 @@ TEST_F(LazyOpsTest, TestMaxPool2D) {
         // Test dilation through the CPU interop.
         for (int dilation = 1; dilation <= 2; ++dilation) {
           torch::Tensor output = torch::max_pool2d(
-              input, /*kernel_size=*/{kernel_size, kernel_size},
+              input,
+              /*kernel_size=*/{kernel_size, kernel_size},
               /*stride=*/{stride, stride},
-              /*padding=*/{padding, padding}, /*dilation=*/{dilation, dilation},
+              /*padding=*/{padding, padding},
+              /*dilation=*/{dilation, dilation},
               /*ceil_mode=*/ceil_mode);
           ForEachDevice([&](const torch::Device& device) {
             torch::Tensor lazy_input = CopyToDevice(input, device);
-            torch::Tensor lazy_output =
-                torch::max_pool2d(lazy_input,
-                                  /*kernel_size=*/{kernel_size, kernel_size},
-                                  /*stride=*/{stride, stride},
-                                  /*padding=*/{padding, padding},
-                                  /*dilation=*/{dilation, dilation},
-                                  /*ceil_mode=*/ceil_mode);
+            torch::Tensor lazy_output = torch::max_pool2d(
+                lazy_input,
+                /*kernel_size=*/{kernel_size, kernel_size},
+                /*stride=*/{stride, stride},
+                /*padding=*/{padding, padding},
+                /*dilation=*/{dilation, dilation},
+                /*ceil_mode=*/ceil_mode);
             AllClose(output, lazy_output);
           });
         }
@@ -7035,9 +7434,9 @@ TEST_F(LazyOpsTest, TestMaxPool2D) {
 }
 
 TEST_F(LazyOpsTest, TestMaxPool2DWithIndices) {
-  torch::Tensor input =
-      torch::rand({1, 4, 14, 14},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {1, 4, 14, 14},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   int kernel_size = 3;
   for (int stride = 1; stride <= 2; ++stride) {
     for (int padding = 0; padding <= 1; ++padding) {
@@ -7046,9 +7445,11 @@ TEST_F(LazyOpsTest, TestMaxPool2DWithIndices) {
         // Test dilation through the CPU interop.
         for (int dilation = 1; dilation <= 2; ++dilation) {
           auto outputs = torch::max_pool2d_with_indices(
-              input, /*kernel_size=*/{kernel_size, kernel_size},
+              input,
+              /*kernel_size=*/{kernel_size, kernel_size},
               /*stride=*/{stride, stride},
-              /*padding=*/{padding, padding}, /*dilation=*/{dilation, dilation},
+              /*padding=*/{padding, padding},
+              /*dilation=*/{dilation, dilation},
               /*ceil_mode=*/ceil_mode);
           ForEachDevice([&](const torch::Device& device) {
             torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -7069,9 +7470,9 @@ TEST_F(LazyOpsTest, TestMaxPool2DWithIndices) {
 }
 
 TEST_F(LazyOpsTest, TestMaxPool2DNonSquare) {
-  torch::Tensor input =
-      torch::rand({1, 4, 14, 14},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {1, 4, 14, 14},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   int kernel_size = 4;
   for (int stride = 1; stride <= 2; ++stride) {
     for (int padding = 0; padding <= 1; ++padding) {
@@ -7080,7 +7481,8 @@ TEST_F(LazyOpsTest, TestMaxPool2DNonSquare) {
         // Test dilation through the CPU interop.
         for (int dilation = 1; dilation <= 2; ++dilation) {
           torch::Tensor output = torch::max_pool2d(
-              input, /*kernel_size=*/{kernel_size, kernel_size + 1},
+              input,
+              /*kernel_size=*/{kernel_size, kernel_size + 1},
               /*stride=*/{stride, stride + 1},
               /*padding=*/{padding, padding + 1},
               /*dilation=*/{dilation, dilation},
@@ -7103,9 +7505,9 @@ TEST_F(LazyOpsTest, TestMaxPool2DNonSquare) {
 }
 
 TEST_F(LazyOpsTest, TestMaxPool3D) {
-  torch::Tensor input =
-      torch::rand({1, 1, 8, 8, 8},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {1, 1, 8, 8, 8},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   int kernel_size = 3;
   for (int stride = 1; stride <= 2; ++stride) {
     for (int padding = 0; padding <= 1; ++padding) {
@@ -7114,7 +7516,8 @@ TEST_F(LazyOpsTest, TestMaxPool3D) {
         // Test dilation through the CPU interop.
         for (int dilation = 1; dilation <= 2; ++dilation) {
           torch::Tensor output = torch::max_pool3d(
-              input, /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
+              input,
+              /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
               /*stride=*/{stride, stride, stride},
               /*padding=*/{padding, padding, padding},
               /*dilation=*/{dilation, dilation, dilation},
@@ -7137,9 +7540,9 @@ TEST_F(LazyOpsTest, TestMaxPool3D) {
 }
 
 TEST_F(LazyOpsTest, TestMaxPool3DWithIndices) {
-  torch::Tensor input =
-      torch::rand({1, 1, 8, 8, 8},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {1, 1, 8, 8, 8},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   int kernel_size = 3;
   for (int stride = 1; stride <= 2; ++stride) {
     for (int padding = 0; padding <= 1; ++padding) {
@@ -7148,7 +7551,8 @@ TEST_F(LazyOpsTest, TestMaxPool3DWithIndices) {
         // Test dilation through the CPU interop.
         for (int dilation = 1; dilation <= 2; ++dilation) {
           auto outputs = torch::max_pool3d_with_indices(
-              input, /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
+              input,
+              /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
               /*stride=*/{stride, stride, stride},
               /*padding=*/{padding, padding, padding},
               /*dilation=*/{dilation, dilation, dilation},
@@ -7173,9 +7577,9 @@ TEST_F(LazyOpsTest, TestMaxPool3DWithIndices) {
 }
 
 TEST_F(LazyOpsTest, TestMaxPool3DIncompleteAttributes) {
-  torch::Tensor input =
-      torch::rand({1, 1, 8, 8, 8},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {1, 1, 8, 8, 8},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   int kernel_size = 3;
   for (int stride = 1; stride <= 2; ++stride) {
     for (int padding = 0; padding <= 1; ++padding) {
@@ -7184,7 +7588,8 @@ TEST_F(LazyOpsTest, TestMaxPool3DIncompleteAttributes) {
         // Test dilation through the CPU interop.
         for (int dilation = 1; dilation <= 2; ++dilation) {
           torch::Tensor output = torch::max_pool3d(
-              input, /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
+              input,
+              /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
               /*stride=*/{},
               /*padding=*/{padding},
               /*dilation=*/{dilation, dilation, dilation},
@@ -7207,9 +7612,9 @@ TEST_F(LazyOpsTest, TestMaxPool3DIncompleteAttributes) {
 }
 
 TEST_F(LazyOpsTest, TestMaxPool3DNonSquare) {
-  torch::Tensor input =
-      torch::rand({1, 1, 8, 8, 8},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {1, 1, 8, 8, 8},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   int kernel_size = 4;
   for (int stride = 1; stride <= 2; ++stride) {
     for (int padding = 0; padding <= 1; ++padding) {
@@ -7252,19 +7657,21 @@ TEST_F(LazyOpsTest, TestMaxPool2DNoBatch) {
         // Test dilation through the CPU interop.
         for (int dilation = 1; dilation <= 2; ++dilation) {
           torch::Tensor output = torch::max_pool2d(
-              input, /*kernel_size=*/{kernel_size, kernel_size},
+              input,
+              /*kernel_size=*/{kernel_size, kernel_size},
               /*stride=*/{stride, stride},
-              /*padding=*/{padding, padding}, /*dilation=*/{dilation, dilation},
+              /*padding=*/{padding, padding},
+              /*dilation=*/{dilation, dilation},
               /*ceil_mode=*/ceil_mode);
           ForEachDevice([&](const torch::Device& device) {
             torch::Tensor lazy_input = CopyToDevice(input, device);
-            torch::Tensor lazy_output =
-                torch::max_pool2d(lazy_input,
-                                  /*kernel_size=*/{kernel_size, kernel_size},
-                                  /*stride=*/{stride, stride},
-                                  /*padding=*/{padding, padding},
-                                  /*dilation=*/{dilation, dilation},
-                                  /*ceil_mode=*/ceil_mode);
+            torch::Tensor lazy_output = torch::max_pool2d(
+                lazy_input,
+                /*kernel_size=*/{kernel_size, kernel_size},
+                /*stride=*/{stride, stride},
+                /*padding=*/{padding, padding},
+                /*dilation=*/{dilation, dilation},
+                /*ceil_mode=*/ceil_mode);
             AllClose(output, lazy_output);
           });
         }
@@ -7274,9 +7681,9 @@ TEST_F(LazyOpsTest, TestMaxPool2DNoBatch) {
 }
 
 TEST_F(LazyOpsTest, TestMaxPool3DNoBatch) {
-  torch::Tensor input =
-      torch::rand({1, 8, 8, 8},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {1, 8, 8, 8},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   int kernel_size = 3;
   for (int stride = 1; stride <= 2; ++stride) {
     for (int padding = 0; padding <= 1; ++padding) {
@@ -7285,7 +7692,8 @@ TEST_F(LazyOpsTest, TestMaxPool3DNoBatch) {
         // Test dilation through the CPU interop.
         for (int dilation = 1; dilation <= 2; ++dilation) {
           torch::Tensor output = torch::max_pool3d(
-              input, /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
+              input,
+              /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
               /*stride=*/{stride, stride, stride},
               /*padding=*/{padding, padding, padding},
               /*dilation=*/{dilation, dilation, dilation},
@@ -7316,20 +7724,22 @@ TEST_F(LazyOpsTest, TestAvgPool1D) {
       for (bool count_include_pad : {true, false}) {
         // Test ceil_mode=true through the CPU interop.
         for (bool ceil_mode : {false, true}) {
-          torch::Tensor output =
-              torch::avg_pool1d(input, /*kernel_size=*/{kernel_size},
-                                /*stride=*/{stride},
-                                /*padding=*/{padding}, /*ceil_mode=*/ceil_mode,
-                                /*count_include_pad=*/count_include_pad);
+          torch::Tensor output = torch::avg_pool1d(
+              input,
+              /*kernel_size=*/{kernel_size},
+              /*stride=*/{stride},
+              /*padding=*/{padding},
+              /*ceil_mode=*/ceil_mode,
+              /*count_include_pad=*/count_include_pad);
           ForEachDevice([&](const torch::Device& device) {
             torch::Tensor lazy_input = CopyToDevice(input, device);
-            torch::Tensor lazy_output =
-                torch::avg_pool1d(lazy_input,
-                                  /*kernel_size=*/{kernel_size},
-                                  /*stride=*/{stride},
-                                  /*padding=*/{padding},
-                                  /*ceil_mode=*/ceil_mode,
-                                  /*count_include_pad=*/count_include_pad);
+            torch::Tensor lazy_output = torch::avg_pool1d(
+                lazy_input,
+                /*kernel_size=*/{kernel_size},
+                /*stride=*/{stride},
+                /*padding=*/{padding},
+                /*ceil_mode=*/ceil_mode,
+                /*count_include_pad=*/count_include_pad);
             AllClose(output, lazy_output);
           });
         }
@@ -7339,9 +7749,9 @@ TEST_F(LazyOpsTest, TestAvgPool1D) {
 }
 
 TEST_F(LazyOpsTest, TestAvgPool2D) {
-  torch::Tensor input =
-      torch::rand({2, 1, 14, 14},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 1, 14, 14},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   int kernel_size = 2;
   for (int stride = 1; stride <= 2; ++stride) {
     for (int padding = 0; padding <= 1; ++padding) {
@@ -7349,20 +7759,22 @@ TEST_F(LazyOpsTest, TestAvgPool2D) {
         // Test ceil_mode=true through the CPU interop.
         for (bool ceil_mode : {false, true}) {
           torch::Tensor output = torch::avg_pool2d(
-              input, /*kernel_size=*/{kernel_size, kernel_size},
+              input,
+              /*kernel_size=*/{kernel_size, kernel_size},
               /*stride=*/{stride, stride},
-              /*padding=*/{padding, padding}, /*ceil_mode=*/ceil_mode,
+              /*padding=*/{padding, padding},
+              /*ceil_mode=*/ceil_mode,
               /*count_include_pad=*/count_include_pad);
           ForEachDevice([&](const torch::Device& device) {
             // torch::Tensor lazy_input = CopyToDevice(input, device);
             torch::Tensor lazy_input = CopyToDevice(input, device);
-            torch::Tensor lazy_output =
-                torch::avg_pool2d(lazy_input,
-                                  /*kernel_size=*/{kernel_size, kernel_size},
-                                  /*stride=*/{stride, stride},
-                                  /*padding=*/{padding, padding},
-                                  /*ceil_mode=*/ceil_mode,
-                                  /*count_include_pad=*/count_include_pad);
+            torch::Tensor lazy_output = torch::avg_pool2d(
+                lazy_input,
+                /*kernel_size=*/{kernel_size, kernel_size},
+                /*stride=*/{stride, stride},
+                /*padding=*/{padding, padding},
+                /*ceil_mode=*/ceil_mode,
+                /*count_include_pad=*/count_include_pad);
             AllClose(output, lazy_output.to(torch::kCPU));
           });
         }
@@ -7372,9 +7784,9 @@ TEST_F(LazyOpsTest, TestAvgPool2D) {
 }
 
 TEST_F(LazyOpsTest, TestAvgPool2DNonSquare) {
-  torch::Tensor input =
-      torch::rand({2, 1, 14, 14},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 1, 14, 14},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   int kernel_size = 4;
   for (int stride = 1; stride <= 2; ++stride) {
     for (int padding = 0; padding <= 1; ++padding) {
@@ -7382,9 +7794,11 @@ TEST_F(LazyOpsTest, TestAvgPool2DNonSquare) {
         // Test ceil_mode=true through the CPU interop.
         for (bool ceil_mode : {false, true}) {
           torch::Tensor output = torch::avg_pool2d(
-              input, /*kernel_size=*/{kernel_size, kernel_size + 1},
+              input,
+              /*kernel_size=*/{kernel_size, kernel_size + 1},
               /*stride=*/{stride, stride + 1},
-              /*padding=*/{padding, padding + 1}, /*ceil_mode=*/ceil_mode,
+              /*padding=*/{padding, padding + 1},
+              /*ceil_mode=*/ceil_mode,
               /*count_include_pad=*/count_include_pad);
           ForEachDevice([&](const torch::Device& device) {
             torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -7404,9 +7818,9 @@ TEST_F(LazyOpsTest, TestAvgPool2DNonSquare) {
 }
 
 TEST_F(LazyOpsTest, TestAvgPool3D) {
-  torch::Tensor input =
-      torch::rand({1, 1, 7, 7, 7},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {1, 1, 7, 7, 7},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   int kernel_size = 2;
   for (int stride = 1; stride <= 2; ++stride) {
     for (int padding = 0; padding <= 1; ++padding) {
@@ -7414,9 +7828,11 @@ TEST_F(LazyOpsTest, TestAvgPool3D) {
         // Test ceil_mode=true through the CPU interop.
         for (bool ceil_mode : {false, true}) {
           torch::Tensor output = torch::avg_pool3d(
-              input, /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
+              input,
+              /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
               /*stride=*/{stride, stride, stride},
-              /*padding=*/{padding, padding, padding}, /*ceil_mode=*/ceil_mode,
+              /*padding=*/{padding, padding, padding},
+              /*ceil_mode=*/ceil_mode,
               /*count_include_pad=*/count_include_pad);
           ForEachDevice([&](const torch::Device& device) {
             torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -7436,9 +7852,9 @@ TEST_F(LazyOpsTest, TestAvgPool3D) {
 }
 
 TEST_F(LazyOpsTest, TestAvgPool3DIncompleteAttributes) {
-  torch::Tensor input =
-      torch::rand({1, 1, 7, 7, 7},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {1, 1, 7, 7, 7},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   int kernel_size = 2;
   for (int stride = 1; stride <= 2; ++stride) {
     for (int padding = 0; padding <= 1; ++padding) {
@@ -7446,9 +7862,11 @@ TEST_F(LazyOpsTest, TestAvgPool3DIncompleteAttributes) {
         // Test ceil_mode=true through the CPU interop.
         for (bool ceil_mode : {false, true}) {
           torch::Tensor output = torch::avg_pool3d(
-              input, /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
+              input,
+              /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
               /*stride=*/{},
-              /*padding=*/{padding, padding, padding}, /*ceil_mode=*/ceil_mode,
+              /*padding=*/{padding, padding, padding},
+              /*ceil_mode=*/ceil_mode,
               /*count_include_pad=*/count_include_pad);
           ForEachDevice([&](const torch::Device& device) {
             torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -7468,9 +7886,9 @@ TEST_F(LazyOpsTest, TestAvgPool3DIncompleteAttributes) {
 }
 
 TEST_F(LazyOpsTest, TestAvgPool3DNonSquare) {
-  torch::Tensor input =
-      torch::rand({1, 1, 7, 7, 7},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {1, 1, 7, 7, 7},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   int kernel_size = 4;
   for (int stride = 1; stride <= 2; ++stride) {
     for (int padding = 0; padding <= 1; ++padding) {
@@ -7511,19 +7929,21 @@ TEST_F(LazyOpsTest, TestAvgPool2DNoBatch) {
         // Test ceil_mode=true through the CPU interop.
         for (bool ceil_mode : {false, true}) {
           torch::Tensor output = torch::avg_pool2d(
-              input, /*kernel_size=*/{kernel_size, kernel_size},
+              input,
+              /*kernel_size=*/{kernel_size, kernel_size},
               /*stride=*/{stride, stride},
-              /*padding=*/{padding, padding}, /*ceil_mode=*/ceil_mode,
+              /*padding=*/{padding, padding},
+              /*ceil_mode=*/ceil_mode,
               /*count_include_pad=*/count_include_pad);
           ForEachDevice([&](const torch::Device& device) {
             torch::Tensor lazy_input = CopyToDevice(input, device);
-            torch::Tensor lazy_output =
-                torch::avg_pool2d(lazy_input,
-                                  /*kernel_size=*/{kernel_size, kernel_size},
-                                  /*stride=*/{stride, stride},
-                                  /*padding=*/{padding, padding},
-                                  /*ceil_mode=*/ceil_mode,
-                                  /*count_include_pad=*/count_include_pad);
+            torch::Tensor lazy_output = torch::avg_pool2d(
+                lazy_input,
+                /*kernel_size=*/{kernel_size, kernel_size},
+                /*stride=*/{stride, stride},
+                /*padding=*/{padding, padding},
+                /*ceil_mode=*/ceil_mode,
+                /*count_include_pad=*/count_include_pad);
             AllClose(output, lazy_output);
           });
         }
@@ -7533,9 +7953,9 @@ TEST_F(LazyOpsTest, TestAvgPool2DNoBatch) {
 }
 
 TEST_F(LazyOpsTest, TestAvgPool3DNoBatch) {
-  torch::Tensor input =
-      torch::rand({1, 7, 7, 7},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {1, 7, 7, 7},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   int kernel_size = 2;
   for (int stride = 1; stride <= 2; ++stride) {
     for (int padding = 0; padding <= 1; ++padding) {
@@ -7543,9 +7963,11 @@ TEST_F(LazyOpsTest, TestAvgPool3DNoBatch) {
         // Test ceil_mode=true through the CPU interop.
         for (bool ceil_mode : {false, true}) {
           torch::Tensor output = torch::avg_pool3d(
-              input, /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
+              input,
+              /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
               /*stride=*/{stride, stride, stride},
-              /*padding=*/{padding, padding, padding}, /*ceil_mode=*/ceil_mode,
+              /*padding=*/{padding, padding, padding},
+              /*ceil_mode=*/ceil_mode,
               /*count_include_pad=*/count_include_pad);
           ForEachDevice([&](const torch::Device& device) {
             torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -7565,9 +7987,9 @@ TEST_F(LazyOpsTest, TestAvgPool3DNoBatch) {
 }
 
 TEST_F(LazyOpsTest, TestAdaptiveAvgPool2D) {
-  torch::Tensor input =
-      torch::rand({4, 1, 28, 28},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {4, 1, 28, 28},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   for (int64_t output_size : {7, 4}) {
     torch::Tensor output =
         torch::adaptive_avg_pool2d(input, {output_size, output_size});
@@ -7581,9 +8003,9 @@ TEST_F(LazyOpsTest, TestAdaptiveAvgPool2D) {
 }
 
 TEST_F(LazyOpsTest, TestAdaptiveAvgPool3D) {
-  torch::Tensor input =
-      torch::rand({9, 4, 56, 28, 28},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {9, 4, 56, 28, 28},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   for (int64_t output_size : {7, 4}) {
     torch::Tensor output = torch::adaptive_avg_pool3d(
         input, {output_size, output_size, output_size});
@@ -7597,9 +8019,9 @@ TEST_F(LazyOpsTest, TestAdaptiveAvgPool3D) {
 }
 
 TEST_F(LazyOpsTest, TestAdaptiveAvgPool3DNoBatch) {
-  torch::Tensor input =
-      torch::rand({3, 56, 28, 28},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {3, 56, 28, 28},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   for (int64_t output_size : {7, 4}) {
     torch::Tensor output = torch::adaptive_avg_pool3d(
         input, {output_size, output_size, output_size});
@@ -7629,9 +8051,9 @@ TEST_F(LazyOpsTest, TestAdaptiveAvgPool2DNoBatch) {
 
 TEST_F(LazyOpsTest, TestMaxUnpool2D) {
   int kernel_size = 2;
-  torch::Tensor input =
-      torch::rand({2, 2, 8, 8},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 2, 8, 8},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   for (int stride = 1; stride <= 2; ++stride) {
     for (int padding = 0; padding <= 1; ++padding) {
       // Test ceil_mode=true through the CPU interop.
@@ -7641,9 +8063,11 @@ TEST_F(LazyOpsTest, TestMaxUnpool2D) {
           torch::Tensor output;
           torch::Tensor indices;
           std::tie(output, indices) = torch::max_pool2d_with_indices(
-              input, /*kernel_size=*/{kernel_size, kernel_size},
+              input,
+              /*kernel_size=*/{kernel_size, kernel_size},
               /*stride=*/{stride, stride},
-              /*padding=*/{padding, padding}, /*dilation=*/{dilation, dilation},
+              /*padding=*/{padding, padding},
+              /*dilation=*/{dilation, dilation},
               /*ceil_mode=*/ceil_mode);
 
           std::vector<int64_t> output_size({input.size(2), input.size(3)});
@@ -7665,9 +8089,9 @@ TEST_F(LazyOpsTest, TestMaxUnpool2D) {
 
 TEST_F(LazyOpsTest, TestMaxUnpool3D) {
   int kernel_size = 2;
-  torch::Tensor input =
-      torch::rand({1, 1, 4, 4, 4},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {1, 1, 4, 4, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   for (int stride = 1; stride <= 2; ++stride) {
     for (int padding = 0; padding <= 1; ++padding) {
       // Test ceil_mode=true through the CPU interop.
@@ -7677,7 +8101,8 @@ TEST_F(LazyOpsTest, TestMaxUnpool3D) {
           torch::Tensor output;
           torch::Tensor indices;
           std::tie(output, indices) = torch::max_pool3d_with_indices(
-              input, /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
+              input,
+              /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
               /*stride=*/{stride, stride, stride},
               /*padding=*/{padding, padding, padding},
               /*dilation=*/{dilation, dilation, dilation},
@@ -7686,16 +8111,21 @@ TEST_F(LazyOpsTest, TestMaxUnpool3D) {
           std::vector<int64_t> output_size(
               {input.size(2), input.size(3), input.size(4)});
           at::Tensor utensor = torch::max_unpool3d(
-              output, indices, output_size, /*stride=*/{stride, stride, stride},
+              output,
+              indices,
+              output_size,
+              /*stride=*/{stride, stride, stride},
               /*padding=*/{padding, padding, padding});
 
           ForEachDevice([&](const torch::Device& device) {
             torch::Tensor lazy_output = CopyToDevice(output, device);
             torch::Tensor lazy_indices = CopyToDevice(indices, device);
-            at::Tensor lazy_utensor =
-                torch::max_unpool3d(lazy_output, lazy_indices, output_size,
-                                    /*stride=*/{stride, stride, stride},
-                                    /*padding=*/{padding, padding, padding});
+            at::Tensor lazy_utensor = torch::max_unpool3d(
+                lazy_output,
+                lazy_indices,
+                output_size,
+                /*stride=*/{stride, stride, stride},
+                /*padding=*/{padding, padding, padding});
             AllClose(utensor, lazy_utensor);
           });
         }
@@ -7705,21 +8135,19 @@ TEST_F(LazyOpsTest, TestMaxUnpool3D) {
 }
 
 TEST_F(LazyOpsTest, TestNllLoss) {
-
-  // TODO(whc) debug divide-by-zero failure under ASAN
-  GTEST_SKIP();
-
   int batch = 6;
   int classes = 2;
   // TODO(asuhan): Fix the torch::kDouble case.
   for (auto dtype : {torch::kFloat}) {
     for (int ignore_index : {-1, 0, 1, 5}) {
       for (bool def_weight : {false, true}) {
-        torch::Tensor input =
-            torch::rand({batch, classes},
-                        torch::TensorOptions(dtype).device(DefaultDevice()));
+        torch::Tensor input = torch::rand(
+            {batch, classes},
+            torch::TensorOptions(dtype).device(DefaultDevice()));
         torch::Tensor target = torch::randint(
-            std::min(ignore_index, 0), classes, {batch},
+            std::min(ignore_index, 0),
+            classes,
+            {batch},
             torch::TensorOptions(torch::kLong).device(DefaultDevice()));
         torch::Tensor weight;
         if (def_weight) {
@@ -7727,13 +8155,15 @@ TEST_F(LazyOpsTest, TestNllLoss) {
               {classes}, torch::TensorOptions(dtype).device(DefaultDevice()));
         }
         for (torch::Reduction::Reduction reduction :
-             {torch::Reduction::Mean, torch::Reduction::Sum,
+             {torch::Reduction::Mean,
+              torch::Reduction::Sum,
               torch::Reduction::None}) {
-          torch::Tensor output =
-              torch::nll_loss(/*self=*/input, /*target=*/target,
-                              /*weight=*/weight,
-                              /*reduction=*/reduction,
-                              /*ignore_index=*/ignore_index);
+          torch::Tensor output = torch::nll_loss(
+              /*self=*/input,
+              /*target=*/target,
+              /*weight=*/weight,
+              /*reduction=*/reduction,
+              /*ignore_index=*/ignore_index);
 
           ForEachDevice([&](const torch::Device& device) {
             torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -7741,9 +8171,11 @@ TEST_F(LazyOpsTest, TestNllLoss) {
             torch::Tensor lazy_weight =
                 def_weight ? CopyToDevice(weight, device) : torch::Tensor();
             torch::Tensor lazy_output = torch::nll_loss(
-                /*self=*/lazy_input, /*target=*/lazy_target,
+                /*self=*/lazy_input,
+                /*target=*/lazy_target,
                 /*weight=*/lazy_weight,
-                /*reduction=*/reduction, /*ignore_index=*/ignore_index);
+                /*reduction=*/reduction,
+                /*ignore_index=*/ignore_index);
             AllClose(output, lazy_output);
           });
         }
@@ -7761,11 +8193,13 @@ TEST_F(LazyOpsTest, TestNllLoss2d) {
   for (auto dtype : {torch::kFloat}) {
     for (int ignore_index : {-1, 0, 1, 5}) {
       for (bool def_weight : {false, true}) {
-        torch::Tensor input =
-            torch::rand({batch, classes, height, width},
-                        torch::TensorOptions(dtype).device(DefaultDevice()));
+        torch::Tensor input = torch::rand(
+            {batch, classes, height, width},
+            torch::TensorOptions(dtype).device(DefaultDevice()));
         torch::Tensor target = torch::randint(
-            std::min(ignore_index, 0), classes, {batch, height, width},
+            std::min(ignore_index, 0),
+            classes,
+            {batch, height, width},
             torch::TensorOptions(torch::kLong).device(DefaultDevice()));
         torch::Tensor weight;
         if (def_weight) {
@@ -7773,13 +8207,15 @@ TEST_F(LazyOpsTest, TestNllLoss2d) {
               {classes}, torch::TensorOptions(dtype).device(DefaultDevice()));
         }
         for (torch::Reduction::Reduction reduction :
-             {torch::Reduction::Mean, torch::Reduction::Sum,
+             {torch::Reduction::Mean,
+              torch::Reduction::Sum,
               torch::Reduction::None}) {
-          torch::Tensor output =
-              torch::nll_loss2d(/*self=*/input, /*target=*/target,
-                                /*weight=*/weight,
-                                /*reduction=*/reduction,
-                                /*ignore_index=*/ignore_index);
+          torch::Tensor output = torch::nll_loss2d(
+              /*self=*/input,
+              /*target=*/target,
+              /*weight=*/weight,
+              /*reduction=*/reduction,
+              /*ignore_index=*/ignore_index);
 
           ForEachDevice([&](const torch::Device& device) {
             torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -7787,9 +8223,11 @@ TEST_F(LazyOpsTest, TestNllLoss2d) {
             torch::Tensor lazy_weight =
                 def_weight ? CopyToDevice(weight, device) : torch::Tensor();
             torch::Tensor lazy_output = torch::nll_loss2d(
-                /*self=*/lazy_input, /*target=*/lazy_target,
+                /*self=*/lazy_input,
+                /*target=*/lazy_target,
                 /*weight=*/lazy_weight,
-                /*reduction=*/reduction, /*ignore_index=*/ignore_index);
+                /*reduction=*/reduction,
+                /*ignore_index=*/ignore_index);
             AllClose(output, lazy_output);
           });
         }
@@ -7804,7 +8242,8 @@ TEST_F(LazyOpsTest, TestSmoothL1Loss) {
   torch::Tensor target = torch::randn(
       {2, 4}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   for (torch::Reduction::Reduction reduction :
-       {torch::Reduction::None, torch::Reduction::Mean,
+       {torch::Reduction::None,
+        torch::Reduction::Mean,
         torch::Reduction::Sum}) {
     for (double beta : {0.25, 1.}) {
       torch::Tensor output =
@@ -7826,7 +8265,8 @@ TEST_F(LazyOpsTest, TestL1Loss) {
   torch::Tensor target = torch::randn(
       {2, 4}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   for (torch::Reduction::Reduction reduction :
-       {torch::Reduction::None, torch::Reduction::Mean,
+       {torch::Reduction::None,
+        torch::Reduction::Mean,
         torch::Reduction::Sum}) {
     torch::Tensor output = torch::l1_loss(input, target, reduction);
     ForEachDevice([&](const torch::Device& device) {
@@ -7841,19 +8281,25 @@ TEST_F(LazyOpsTest, TestL1Loss) {
 
 TEST_F(LazyOpsTest, TestL1LossBackward) {
   for (torch::Reduction::Reduction reduction :
-       {torch::Reduction::None, torch::Reduction::Mean,
+       {torch::Reduction::None,
+        torch::Reduction::Mean,
         torch::Reduction::Sum}) {
     auto testfn =
         [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
       return torch::l1_loss(inputs[0], inputs[1], reduction);
     };
     ForEachDevice([&](const torch::Device& device) {
-      TestBackward({torch::rand({2, 4}, torch::TensorOptions(torch::kFloat)
-                                            .device(DefaultDevice())
-                                            .requires_grad(true)),
-                    torch::rand({2, 4}, torch::TensorOptions(torch::kFloat)
-                                            .device(DefaultDevice()))},
-                   device, testfn);
+      TestBackward(
+          {torch::rand(
+               {2, 4},
+               torch::TensorOptions(torch::kFloat)
+                   .device(DefaultDevice())
+                   .requires_grad(true)),
+           torch::rand(
+               {2, 4},
+               torch::TensorOptions(torch::kFloat).device(DefaultDevice()))},
+          device,
+          testfn);
     });
   }
 }
@@ -7864,7 +8310,8 @@ TEST_F(LazyOpsTest, TestMseLoss) {
   torch::Tensor target = torch::randn(
       {2, 4}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   for (torch::Reduction::Reduction reduction :
-       {torch::Reduction::None, torch::Reduction::Mean,
+       {torch::Reduction::None,
+        torch::Reduction::Mean,
         torch::Reduction::Sum}) {
     torch::Tensor output = torch::mse_loss(input, target, reduction);
     ForEachDevice([&](const torch::Device& device) {
@@ -7879,50 +8326,60 @@ TEST_F(LazyOpsTest, TestMseLoss) {
 
 TEST_F(LazyOpsTest, TestMseLossBackward) {
   for (torch::Reduction::Reduction reduction :
-       {torch::Reduction::None, torch::Reduction::Mean,
+       {torch::Reduction::None,
+        torch::Reduction::Mean,
         torch::Reduction::Sum}) {
     auto testfn =
         [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
       return torch::mse_loss(inputs[0], inputs[1], reduction);
     };
     ForEachDevice([&](const torch::Device& device) {
-      TestBackward({torch::rand({2, 4}, torch::TensorOptions(torch::kFloat)
-                                            .device(DefaultDevice())
-                                            .requires_grad(true)),
-                    torch::rand({2, 4}, torch::TensorOptions(torch::kFloat)
-                                            .device(DefaultDevice()))},
-                   device, testfn);
+      TestBackward(
+          {torch::rand(
+               {2, 4},
+               torch::TensorOptions(torch::kFloat)
+                   .device(DefaultDevice())
+                   .requires_grad(true)),
+           torch::rand(
+               {2, 4},
+               torch::TensorOptions(torch::kFloat).device(DefaultDevice()))},
+          device,
+          testfn);
     });
   }
 }
 
 TEST_F(LazyOpsTest, TestBatchNorm1D) {
   int num_features = 3;
-  torch::Tensor input =
-      torch::rand({2, num_features, 4},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor weight =
-      torch::rand({num_features},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor bias =
-      torch::rand({num_features},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor running_mean =
-      torch::zeros({num_features},
-                   torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor running_var =
-      torch::ones({num_features},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, num_features, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor weight = torch::rand(
+      {num_features},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor bias = torch::rand(
+      {num_features},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor running_mean = torch::zeros(
+      {num_features},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor running_var = torch::ones(
+      {num_features},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   double momentum = 0.1;
   double eps = 0.5;
   torch::Tensor undef;
   for (bool training : {true, false}) {
     for (bool undef_weight_bias : {false, true}) {
       torch::Tensor output = torch::batch_norm(
-          /*input=*/input, /*weight=*/undef_weight_bias ? undef : weight,
+          /*input=*/input,
+          /*weight=*/undef_weight_bias ? undef : weight,
           /*bias=*/undef_weight_bias ? undef : bias,
-          /*running_mean=*/running_mean, /*running_var=*/running_var,
-          /*training=*/training, /*momentum=*/momentum, /*eps=*/eps,
+          /*running_mean=*/running_mean,
+          /*running_var=*/running_var,
+          /*training=*/training,
+          /*momentum=*/momentum,
+          /*eps=*/eps,
           /*cudnn_enabled=*/false);
       ForEachDevice([&](const torch::Device& device) {
         torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -7933,9 +8390,14 @@ TEST_F(LazyOpsTest, TestBatchNorm1D) {
         torch::Tensor lazy_running_mean = CopyToDevice(running_mean, device);
         torch::Tensor lazy_running_var = CopyToDevice(running_var, device);
         torch::Tensor lazy_output = torch::batch_norm(
-            /*input=*/lazy_input, /*weight=*/lazy_weight, /*bias=*/lazy_bias,
-            /*running_mean=*/lazy_running_mean, /*running_var=*/lazy_running_var,
-            /*training=*/training, /*momentum=*/momentum, /*eps=*/eps,
+            /*input=*/lazy_input,
+            /*weight=*/lazy_weight,
+            /*bias=*/lazy_bias,
+            /*running_mean=*/lazy_running_mean,
+            /*running_var=*/lazy_running_var,
+            /*training=*/training,
+            /*momentum=*/momentum,
+            /*eps=*/eps,
             /*cudnn_enabled=*/false);
         AllClose(output, lazy_output, /*rtol=*/1e-3, /*atol=*/1e-5);
       });
@@ -7945,31 +8407,35 @@ TEST_F(LazyOpsTest, TestBatchNorm1D) {
 
 TEST_F(LazyOpsTest, TestBatchNorm2D) {
   int num_features = 3;
-  torch::Tensor input =
-      torch::rand({2, num_features, 4, 4},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor weight =
-      torch::rand({num_features},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor bias =
-      torch::rand({num_features},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor running_mean =
-      torch::zeros({num_features},
-                   torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-  torch::Tensor running_var =
-      torch::ones({num_features},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, num_features, 4, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor weight = torch::rand(
+      {num_features},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor bias = torch::rand(
+      {num_features},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor running_mean = torch::zeros(
+      {num_features},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor running_var = torch::ones(
+      {num_features},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   double momentum = 0.1;
   double eps = 0.5;
   torch::Tensor undef;
   for (bool training : {true, false}) {
     for (bool undef_weight_bias : {false, true}) {
       torch::Tensor output = torch::batch_norm(
-          /*input=*/input, /*weight=*/undef_weight_bias ? undef : weight,
+          /*input=*/input,
+          /*weight=*/undef_weight_bias ? undef : weight,
           /*bias=*/undef_weight_bias ? undef : bias,
-          /*running_mean=*/running_mean, /*running_var=*/running_var,
-          /*training=*/training, /*momentum=*/momentum, /*eps=*/eps,
+          /*running_mean=*/running_mean,
+          /*running_var=*/running_var,
+          /*training=*/training,
+          /*momentum=*/momentum,
+          /*eps=*/eps,
           /*cudnn_enabled=*/false);
       ForEachDevice([&](const torch::Device& device) {
         torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -7980,9 +8446,14 @@ TEST_F(LazyOpsTest, TestBatchNorm2D) {
         torch::Tensor lazy_running_mean = CopyToDevice(running_mean, device);
         torch::Tensor lazy_running_var = CopyToDevice(running_var, device);
         torch::Tensor lazy_output = torch::batch_norm(
-            /*input=*/lazy_input, /*weight=*/lazy_weight, /*bias=*/lazy_bias,
-            /*running_mean=*/lazy_running_mean, /*running_var=*/lazy_running_var,
-            /*training=*/training, /*momentum=*/momentum, /*eps=*/eps,
+            /*input=*/lazy_input,
+            /*weight=*/lazy_weight,
+            /*bias=*/lazy_bias,
+            /*running_mean=*/lazy_running_mean,
+            /*running_var=*/lazy_running_var,
+            /*training=*/training,
+            /*momentum=*/momentum,
+            /*eps=*/eps,
             /*cudnn_enabled=*/false);
         AllClose(output, lazy_output, /*rtol=*/1e-3, /*atol=*/1e-5);
       });
@@ -8011,9 +8482,9 @@ TEST_F(LazyOpsTest, TestContiguous) {
 }
 
 TEST_F(LazyOpsTest, TestSqueezeAll) {
-  torch::Tensor input =
-      torch::rand({2, 1, 3, 1},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 1, 3, 1},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor output = torch::squeeze(input);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -8040,9 +8511,9 @@ TEST_F(LazyOpsTest, TestSqueezeAllInPlace) {
 }
 
 TEST_F(LazyOpsTest, TestSqueezeOne) {
-  torch::Tensor input =
-      torch::rand({2, 1, 3, 1},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 1, 3, 1},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   int rank = input.dim();
   for (int dim = -rank; dim < rank; ++dim) {
     torch::Tensor output = torch::squeeze(input, dim);
@@ -8117,7 +8588,8 @@ TEST_F(LazyOpsTest, TestMaskedFill) {
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     torch::Tensor lazy_mask = CopyToDevice(mask, device);
-    torch::Tensor lazy_result = torch::masked_fill(lazy_input, lazy_mask, value);
+    torch::Tensor lazy_result =
+        torch::masked_fill(lazy_input, lazy_mask, value);
     AllClose(result, lazy_result);
   });
 }
@@ -8139,9 +8611,9 @@ TEST_F(LazyOpsTest, TestMaskedFillInPlace) {
 }
 
 TEST_F(LazyOpsTest, TestMaskedFillBroadcast) {
-  torch::Tensor input =
-      torch::rand({2, 5, 4, 3},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 5, 4, 3},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor mask = torch::randint(
       0, 2, {4, 1}, torch::TensorOptions(torch::kBool).device(DefaultDevice()));
   torch::Scalar value(42);
@@ -8149,7 +8621,8 @@ TEST_F(LazyOpsTest, TestMaskedFillBroadcast) {
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     torch::Tensor lazy_mask = CopyToDevice(mask, device);
-    torch::Tensor lazy_result = torch::masked_fill(lazy_input, lazy_mask, value);
+    torch::Tensor lazy_result =
+        torch::masked_fill(lazy_input, lazy_mask, value);
     AllClose(result, lazy_result);
   });
 }
@@ -8190,8 +8663,10 @@ TEST_F(LazyOpsTest, TestPermute) {
   for (std::vector<int64_t> dims_permutation : dims_permutations) {
     for (bool negative_dims : {false, true}) {
       if (negative_dims) {
-        std::for_each(dims_permutation.begin(), dims_permutation.end(),
-                      [rank](int64_t& dim) { dim -= rank; });
+        std::for_each(
+            dims_permutation.begin(),
+            dims_permutation.end(),
+            [rank](int64_t& dim) { dim -= rank; });
       }
       torch::Tensor output = input.permute(dims_permutation);
       ForEachDevice([&](const torch::Device& device) {
@@ -8211,8 +8686,10 @@ TEST_F(LazyOpsTest, TestPermuteMod) {
   for (std::vector<int64_t> dims_permutation : dims_permutations) {
     for (bool negative_dims : {false, true}) {
       if (negative_dims) {
-        std::for_each(dims_permutation.begin(), dims_permutation.end(),
-                      [rank](int64_t& dim) { dim -= rank; });
+        std::for_each(
+            dims_permutation.begin(),
+            dims_permutation.end(),
+            [rank](int64_t& dim) { dim -= rank; });
       }
       torch::Tensor input = torch::zeros(
           input_sizes,
@@ -8246,8 +8723,8 @@ TEST_F(LazyOpsTest, TestFlip) {
   for (std::vector<int64_t> flip_dims : dim_powerset) {
     for (bool negative_dims : {false, true}) {
       if (negative_dims) {
-        std::for_each(flip_dims.begin(), flip_dims.end(),
-                      [](int64_t& dim) { dim -= 3; });
+        std::for_each(
+            flip_dims.begin(), flip_dims.end(), [](int64_t& dim) { dim -= 3; });
       }
       torch::Tensor output = torch::flip(input, flip_dims);
       ForEachDevice([&](const torch::Device& device) {
@@ -8260,22 +8737,23 @@ TEST_F(LazyOpsTest, TestFlip) {
 }
 
 TEST_F(LazyOpsTest, TestPixelShuffle) {
-  torch::Tensor input =
-      torch::rand({5, 18, 4, 4},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {5, 18, 4, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   int upscale_factor = 3;
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     torch::Tensor output = torch::pixel_shuffle(input, upscale_factor);
-    torch::Tensor lazy_output = torch::pixel_shuffle(lazy_input, upscale_factor);
+    torch::Tensor lazy_output =
+        torch::pixel_shuffle(lazy_input, upscale_factor);
     AllClose(output, lazy_output);
   });
 }
 
 TEST_F(LazyOpsTest, TestSumToSize) {
-  torch::Tensor input =
-      torch::rand({4, 6, 3, 7},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {4, 6, 3, 7},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   std::vector<int64_t> out_size = {4, 1, 1, 7};
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -8375,9 +8853,9 @@ TEST_F(LazyOpsTest, TestSplitEmpty) {
 }
 
 TEST_F(LazyOpsTest, TestSplitWithSizes) {
-  torch::Tensor input =
-      torch::rand({15, 15, 15},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {15, 15, 15},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   int rank = input.dim();
   for (int dim = -rank; dim < rank; ++dim) {
     std::vector<torch::Tensor> outputs =
@@ -8431,9 +8909,9 @@ TEST_F(LazyOpsTest, TestCrossExplicitDim) {
 }
 
 TEST_F(LazyOpsTest, TestCrossZeroDim) {
-  torch::Tensor input =
-      torch::rand({0, 1, 3, 0},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {0, 1, 3, 0},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor result = torch::cross(input, input);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -8444,9 +8922,9 @@ TEST_F(LazyOpsTest, TestCrossZeroDim) {
 
 TEST_F(LazyOpsTest, TestTriu) {
   int size = 5;
-  torch::Tensor input =
-      torch::rand({size, size},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {size, size},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   // Test all diagonals and out of bounds (must be no-op).
   for (int diagonal = -size; diagonal <= size; ++diagonal) {
     torch::Tensor output = torch::triu(input, diagonal);
@@ -8460,9 +8938,9 @@ TEST_F(LazyOpsTest, TestTriu) {
 
 TEST_F(LazyOpsTest, TestTriuNonSquare) {
   int size = 5;
-  torch::Tensor input =
-      torch::rand({size, size + 1},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {size, size + 1},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   // Test all diagonals and out of bounds (must be no-op).
   for (int diagonal = -size; diagonal <= size; ++diagonal) {
     torch::Tensor output = torch::triu(input, diagonal);
@@ -8477,9 +8955,9 @@ TEST_F(LazyOpsTest, TestTriuNonSquare) {
 TEST_F(LazyOpsTest, TestTriuBatch) {
   int size = 5;
   int batch_size = 3;
-  torch::Tensor input =
-      torch::rand({batch_size, size, size},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {batch_size, size, size},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   // Test all diagonals and out of bounds (must be no-op).
   for (int diagonal = -size; diagonal <= size; ++diagonal) {
     torch::Tensor output = torch::triu(input, diagonal);
@@ -8493,9 +8971,9 @@ TEST_F(LazyOpsTest, TestTriuBatch) {
 
 TEST_F(LazyOpsTest, TestTril) {
   int size = 5;
-  torch::Tensor input =
-      torch::rand({size, size},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {size, size},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   // Test all diagonals and out of bounds (must be no-op).
   for (int diagonal = -size; diagonal <= size; ++diagonal) {
     torch::Tensor output = torch::tril(input, diagonal);
@@ -8509,9 +8987,9 @@ TEST_F(LazyOpsTest, TestTril) {
 
 TEST_F(LazyOpsTest, TestTrilNonSquare) {
   int size = 5;
-  torch::Tensor input =
-      torch::rand({size, size + 1},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {size, size + 1},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   // Test all diagonals and out of bounds (must be no-op).
   for (int diagonal = -size; diagonal <= size; ++diagonal) {
     torch::Tensor output = torch::tril(input, diagonal);
@@ -8526,9 +9004,9 @@ TEST_F(LazyOpsTest, TestTrilNonSquare) {
 TEST_F(LazyOpsTest, TestTrilBatch) {
   int size = 5;
   int batch_size = 3;
-  torch::Tensor input =
-      torch::rand({batch_size, size, size},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {batch_size, size, size},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   // Test all diagonals and out of bounds (must be no-op).
   for (int diagonal = -size; diagonal <= size; ++diagonal) {
     torch::Tensor output = torch::tril(input, diagonal);
@@ -8589,9 +9067,9 @@ TEST_F(LazyOpsTest, TestTrace) {
 TEST_F(LazyOpsTest, TestTraceWide) {
   int lines = 3;
   int cols = 5;
-  torch::Tensor input =
-      torch::rand({lines, cols},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {lines, cols},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor output = torch::trace(input);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -8603,9 +9081,9 @@ TEST_F(LazyOpsTest, TestTraceWide) {
 TEST_F(LazyOpsTest, TestTraceNarrow) {
   int lines = 5;
   int cols = 3;
-  torch::Tensor input =
-      torch::rand({lines, cols},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {lines, cols},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   torch::Tensor output = torch::trace(input);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -8631,9 +9109,9 @@ TEST_F(LazyOpsTest, TestDiagRank1) {
 
 TEST_F(LazyOpsTest, TestDiagRank2) {
   int size = 7;
-  torch::Tensor input =
-      torch::rand({size, size},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {size, size},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   // Test all diagonals and out of bounds (must be no-op).
   for (int diagonal = -size; diagonal <= size; ++diagonal) {
     torch::Tensor output = torch::diag(input, diagonal);
@@ -8646,9 +9124,9 @@ TEST_F(LazyOpsTest, TestDiagRank2) {
 }
 
 TEST_F(LazyOpsTest, TestDiagFlat) {
-  torch::Tensor input =
-      torch::rand({4, 3, 6, 7},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {4, 3, 6, 7},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   for (int diagonal = -10; diagonal < 10; ++diagonal) {
     torch::Tensor output = torch::diagflat(input, diagonal);
     ForEachDevice([&](const torch::Device& device) {
@@ -8661,9 +9139,9 @@ TEST_F(LazyOpsTest, TestDiagFlat) {
 
 TEST_F(LazyOpsTest, TestDiagonal) {
   int size = 5;
-  torch::Tensor input =
-      torch::rand({size, size},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {size, size},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   // Test all diagonals and out of bounds (must be no-op).
   for (int diagonal = -size; diagonal <= size; ++diagonal) {
     torch::Tensor output = torch::diagonal(input, diagonal);
@@ -8675,11 +9153,33 @@ TEST_F(LazyOpsTest, TestDiagonal) {
   }
 }
 
+TEST_F(LazyOpsTest, TestDiagonalUpdate) {
+  int size = 5;
+  // Test all diagonals and out of bounds (must be no-op).
+  for (int diagonal = -size; diagonal <= size; ++diagonal) {
+    auto input = torch::rand(
+        {size, size},
+        torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+    auto input_clone = input.clone();
+    auto output = torch::diagonal(input, diagonal);
+    output.add_(1);
+
+    ForEachDevice([&](const torch::Device& device) {
+      torch::Tensor lazy_input = CopyToDevice(input_clone, device);
+      torch::Tensor lazy_output = torch::diagonal(lazy_input, diagonal);
+      lazy_output.add_(1);
+
+      AllClose(output, lazy_output);
+      AllClose(input, lazy_input);
+    });
+  }
+}
+
 TEST_F(LazyOpsTest, TestDiagonalNonSquare) {
   int size = 5;
-  torch::Tensor input =
-      torch::rand({size, size + 1},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {size, size + 1},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   // Test all diagonals and out of bounds (must be no-op).
   for (int diagonal = -size; diagonal <= size; ++diagonal) {
     torch::Tensor output = torch::diagonal(input, diagonal);
@@ -8696,9 +9196,9 @@ TEST_F(LazyOpsTest, TestDiagonalBatch) {
   int batch_size = 3;
   int dim1 = 1;
   int dim2 = 2;
-  torch::Tensor input =
-      torch::rand({batch_size, size, size},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {batch_size, size, size},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   // Test all diagonals and out of bounds (must be no-op).
   for (int diagonal = -size; diagonal <= size; ++diagonal) {
     torch::Tensor output =
@@ -8737,21 +9237,25 @@ TEST_F(LazyOpsTest, TestFlatten) {
 
 TEST_F(LazyOpsTest, TestLogicalAnd) {
   for (torch::ScalarType scalar_type1 :
-       {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+       {torch::kFloat,
+        torch::kByte,
+        torch::kChar,
+        torch::kShort,
+        torch::kInt,
         torch::kLong}) {
-    torch::Tensor lhs =
-        isFloatingType(scalar_type1)
-            ? torch::rand({3, 4}, torch::TensorOptions(scalar_type1))
-            : torch::randint(0, 100, {3, 4},
-                             torch::TensorOptions(scalar_type1));
+    torch::Tensor lhs = isFloatingType(scalar_type1)
+        ? torch::rand({3, 4}, torch::TensorOptions(scalar_type1))
+        : torch::randint(0, 100, {3, 4}, torch::TensorOptions(scalar_type1));
     for (torch::ScalarType scalar_type2 :
-         {torch::kFloat, torch::kByte, torch::kChar, torch::kShort, torch::kInt,
+         {torch::kFloat,
+          torch::kByte,
+          torch::kChar,
+          torch::kShort,
+          torch::kInt,
           torch::kLong}) {
-      torch::Tensor rhs =
-          isFloatingType(scalar_type2)
-              ? torch::rand({3, 4}, torch::TensorOptions(scalar_type2))
-              : torch::randint(1, 100, {3, 4},
-                               torch::TensorOptions(scalar_type2));
+      torch::Tensor rhs = isFloatingType(scalar_type2)
+          ? torch::rand({3, 4}, torch::TensorOptions(scalar_type2))
+          : torch::randint(1, 100, {3, 4}, torch::TensorOptions(scalar_type2));
       torch::Tensor result = torch::logical_and(lhs, rhs);
       ForEachDevice([&](const torch::Device& device) {
         torch::Tensor lazy_lhs = CopyToDevice(lhs, device);
@@ -8767,10 +9271,16 @@ TEST_F(LazyOpsTest, TestLogicalAnd) {
 }
 
 TEST_F(LazyOpsTest, TestBitwiseAnd) {
-  torch::Tensor lhs = torch::randint(0, std::numeric_limits<int32_t>::max(),
-                                     {4, 2}, torch::TensorOptions(torch::kInt));
-  torch::Tensor rhs = torch::randint(0, std::numeric_limits<int32_t>::max(),
-                                     {4, 2}, torch::TensorOptions(torch::kInt));
+  torch::Tensor lhs = torch::randint(
+      0,
+      std::numeric_limits<int32_t>::max(),
+      {4, 2},
+      torch::TensorOptions(torch::kInt));
+  torch::Tensor rhs = torch::randint(
+      0,
+      std::numeric_limits<int32_t>::max(),
+      {4, 2},
+      torch::TensorOptions(torch::kInt));
   torch::Tensor result = lhs.__and__(rhs);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_lhs = CopyToDevice(lhs, device);
@@ -8781,10 +9291,16 @@ TEST_F(LazyOpsTest, TestBitwiseAnd) {
 }
 
 TEST_F(LazyOpsTest, TestBitwiseAndInPlace) {
-  torch::Tensor lhs = torch::randint(0, std::numeric_limits<int32_t>::max(),
-                                     {4, 2}, torch::TensorOptions(torch::kInt));
-  torch::Tensor rhs = torch::randint(0, std::numeric_limits<int32_t>::max(),
-                                     {4, 2}, torch::TensorOptions(torch::kInt));
+  torch::Tensor lhs = torch::randint(
+      0,
+      std::numeric_limits<int32_t>::max(),
+      {4, 2},
+      torch::TensorOptions(torch::kInt));
+  torch::Tensor rhs = torch::randint(
+      0,
+      std::numeric_limits<int32_t>::max(),
+      {4, 2},
+      torch::TensorOptions(torch::kInt));
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_lhs = CopyToDevice(lhs, device);
     torch::Tensor result = lhs.__iand__(rhs);
@@ -8796,8 +9312,11 @@ TEST_F(LazyOpsTest, TestBitwiseAndInPlace) {
 }
 
 TEST_F(LazyOpsTest, TestBitwiseAndScalar) {
-  torch::Tensor lhs = torch::randint(0, std::numeric_limits<int32_t>::max(),
-                                     {4, 2}, torch::TensorOptions(torch::kInt));
+  torch::Tensor lhs = torch::randint(
+      0,
+      std::numeric_limits<int32_t>::max(),
+      {4, 2},
+      torch::TensorOptions(torch::kInt));
   torch::Scalar rhs(123456789);
   torch::Tensor result = lhs.__and__(rhs);
   ForEachDevice([&](const torch::Device& device) {
@@ -8808,8 +9327,11 @@ TEST_F(LazyOpsTest, TestBitwiseAndScalar) {
 }
 
 TEST_F(LazyOpsTest, TestBitwiseAndScalarInPlace) {
-  torch::Tensor lhs = torch::randint(0, std::numeric_limits<int32_t>::max(),
-                                     {4, 2}, torch::TensorOptions(torch::kInt));
+  torch::Tensor lhs = torch::randint(
+      0,
+      std::numeric_limits<int32_t>::max(),
+      {4, 2},
+      torch::TensorOptions(torch::kInt));
   torch::Scalar rhs(123456789);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_lhs = CopyToDevice(lhs, device);
@@ -8828,16 +9350,23 @@ TEST_F(LazyOpsTest, TestBitwiseAndPromotion) {
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     torch::Tensor lazy_view = lazy_input.reshape(-1);
-    torch::Tensor lazy_result = torch::__and__(lazy_view.gt(0), lazy_view.ne(0));
+    torch::Tensor lazy_result =
+        torch::__and__(lazy_view.gt(0), lazy_view.ne(0));
     AllEqual(result, lazy_result);
   });
 }
 
 TEST_F(LazyOpsTest, TestBitwiseOr) {
-  torch::Tensor lhs = torch::randint(0, std::numeric_limits<int32_t>::max(),
-                                     {4, 2}, torch::TensorOptions(torch::kInt));
-  torch::Tensor rhs = torch::randint(0, std::numeric_limits<int32_t>::max(),
-                                     {4, 2}, torch::TensorOptions(torch::kInt));
+  torch::Tensor lhs = torch::randint(
+      0,
+      std::numeric_limits<int32_t>::max(),
+      {4, 2},
+      torch::TensorOptions(torch::kInt));
+  torch::Tensor rhs = torch::randint(
+      0,
+      std::numeric_limits<int32_t>::max(),
+      {4, 2},
+      torch::TensorOptions(torch::kInt));
   torch::Tensor result = lhs.__or__(rhs);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_lhs = CopyToDevice(lhs, device);
@@ -8848,10 +9377,16 @@ TEST_F(LazyOpsTest, TestBitwiseOr) {
 }
 
 TEST_F(LazyOpsTest, TestBitwiseOrInPlace) {
-  torch::Tensor lhs = torch::randint(0, std::numeric_limits<int32_t>::max(),
-                                     {4, 2}, torch::TensorOptions(torch::kInt));
-  torch::Tensor rhs = torch::randint(0, std::numeric_limits<int32_t>::max(),
-                                     {4, 2}, torch::TensorOptions(torch::kInt));
+  torch::Tensor lhs = torch::randint(
+      0,
+      std::numeric_limits<int32_t>::max(),
+      {4, 2},
+      torch::TensorOptions(torch::kInt));
+  torch::Tensor rhs = torch::randint(
+      0,
+      std::numeric_limits<int32_t>::max(),
+      {4, 2},
+      torch::TensorOptions(torch::kInt));
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_lhs = CopyToDevice(lhs, device);
     torch::Tensor result = lhs.__ior__(rhs);
@@ -8863,8 +9398,11 @@ TEST_F(LazyOpsTest, TestBitwiseOrInPlace) {
 }
 
 TEST_F(LazyOpsTest, TestBitwiseOrScalar) {
-  torch::Tensor lhs = torch::randint(0, std::numeric_limits<int32_t>::max(),
-                                     {4, 2}, torch::TensorOptions(torch::kInt));
+  torch::Tensor lhs = torch::randint(
+      0,
+      std::numeric_limits<int32_t>::max(),
+      {4, 2},
+      torch::TensorOptions(torch::kInt));
   torch::Scalar rhs(123456789);
   torch::Tensor result = lhs.__or__(rhs);
   ForEachDevice([&](const torch::Device& device) {
@@ -8875,8 +9413,11 @@ TEST_F(LazyOpsTest, TestBitwiseOrScalar) {
 }
 
 TEST_F(LazyOpsTest, TestBitwiseOrScalarInPlace) {
-  torch::Tensor lhs = torch::randint(0, std::numeric_limits<int32_t>::max(),
-                                     {4, 2}, torch::TensorOptions(torch::kInt));
+  torch::Tensor lhs = torch::randint(
+      0,
+      std::numeric_limits<int32_t>::max(),
+      {4, 2},
+      torch::TensorOptions(torch::kInt));
   torch::Scalar rhs(123456789);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_lhs = CopyToDevice(lhs, device);
@@ -8888,10 +9429,16 @@ TEST_F(LazyOpsTest, TestBitwiseOrScalarInPlace) {
 }
 
 TEST_F(LazyOpsTest, TestBitwiseXor) {
-  torch::Tensor lhs = torch::randint(0, std::numeric_limits<int32_t>::max(),
-                                     {4, 2}, torch::TensorOptions(torch::kInt));
-  torch::Tensor rhs = torch::randint(0, std::numeric_limits<int32_t>::max(),
-                                     {4, 2}, torch::TensorOptions(torch::kInt));
+  torch::Tensor lhs = torch::randint(
+      0,
+      std::numeric_limits<int32_t>::max(),
+      {4, 2},
+      torch::TensorOptions(torch::kInt));
+  torch::Tensor rhs = torch::randint(
+      0,
+      std::numeric_limits<int32_t>::max(),
+      {4, 2},
+      torch::TensorOptions(torch::kInt));
   torch::Tensor result = lhs.__xor__(rhs);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_lhs = CopyToDevice(lhs, device);
@@ -8902,10 +9449,16 @@ TEST_F(LazyOpsTest, TestBitwiseXor) {
 }
 
 TEST_F(LazyOpsTest, TestBitwiseXorInPlace) {
-  torch::Tensor lhs = torch::randint(0, std::numeric_limits<int32_t>::max(),
-                                     {4, 2}, torch::TensorOptions(torch::kInt));
-  torch::Tensor rhs = torch::randint(0, std::numeric_limits<int32_t>::max(),
-                                     {4, 2}, torch::TensorOptions(torch::kInt));
+  torch::Tensor lhs = torch::randint(
+      0,
+      std::numeric_limits<int32_t>::max(),
+      {4, 2},
+      torch::TensorOptions(torch::kInt));
+  torch::Tensor rhs = torch::randint(
+      0,
+      std::numeric_limits<int32_t>::max(),
+      {4, 2},
+      torch::TensorOptions(torch::kInt));
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_lhs = CopyToDevice(lhs, device);
     torch::Tensor result = lhs.__ixor__(rhs);
@@ -8917,8 +9470,11 @@ TEST_F(LazyOpsTest, TestBitwiseXorInPlace) {
 }
 
 TEST_F(LazyOpsTest, TestBitwiseXorScalar) {
-  torch::Tensor lhs = torch::randint(0, std::numeric_limits<int32_t>::max(),
-                                     {4, 2}, torch::TensorOptions(torch::kInt));
+  torch::Tensor lhs = torch::randint(
+      0,
+      std::numeric_limits<int32_t>::max(),
+      {4, 2},
+      torch::TensorOptions(torch::kInt));
   torch::Scalar rhs(123456789);
   torch::Tensor result = lhs.__xor__(rhs);
   ForEachDevice([&](const torch::Device& device) {
@@ -8929,8 +9485,11 @@ TEST_F(LazyOpsTest, TestBitwiseXorScalar) {
 }
 
 TEST_F(LazyOpsTest, TestBitwiseXorScalarInPlace) {
-  torch::Tensor lhs = torch::randint(0, std::numeric_limits<int32_t>::max(),
-                                     {4, 2}, torch::TensorOptions(torch::kInt));
+  torch::Tensor lhs = torch::randint(
+      0,
+      std::numeric_limits<int32_t>::max(),
+      {4, 2},
+      torch::TensorOptions(torch::kInt));
   torch::Scalar rhs(123456789);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_lhs = CopyToDevice(lhs, device);
@@ -8943,25 +9502,30 @@ TEST_F(LazyOpsTest, TestBitwiseXorScalarInPlace) {
 
 TEST_F(LazyOpsTest, TestLshift) {
   torch::Tensor input = torch::ones(
-      {4, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+      {4, 2}, torch::TensorOptions(torch::kInt32).device(DefaultDevice()));
   torch::Tensor shift_amount = torch::randint(
-      16, input.sizes(), torch::TensorOptions().device(DefaultDevice()));
+      16,
+      input.sizes(),
+      torch::TensorOptions(torch::kInt32).device(DefaultDevice()));
   torch::Tensor result = torch::__lshift__(input, shift_amount);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     torch::Tensor lazy_shift_amount = CopyToDevice(shift_amount, device);
-    torch::Tensor lazy_result = torch::__lshift__(lazy_input, lazy_shift_amount);
+    torch::Tensor lazy_result =
+        torch::__lshift__(lazy_input, lazy_shift_amount);
     AllClose(result, lazy_result);
   });
 }
 
 TEST_F(LazyOpsTest, TestLshiftInPlace) {
   torch::Tensor input = torch::ones(
-      {4, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+      {4, 2}, torch::TensorOptions(torch::kInt32).device(DefaultDevice()));
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     torch::Tensor shift_amount = torch::randint(
-        16, input.sizes(), torch::TensorOptions().device(DefaultDevice()));
+        16,
+        input.sizes(),
+        torch::TensorOptions(torch::kInt32).device(DefaultDevice()));
     torch::Tensor result = input.__ilshift__(shift_amount);
     torch::Tensor lazy_shift_amount = CopyToDevice(shift_amount, device);
     torch::Tensor lazy_result = lazy_input.__ilshift__(lazy_shift_amount);
@@ -8972,7 +9536,7 @@ TEST_F(LazyOpsTest, TestLshiftInPlace) {
 
 TEST_F(LazyOpsTest, TestLshiftScalar) {
   torch::Tensor input = torch::ones(
-      {4, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+      {4, 2}, torch::TensorOptions(torch::kInt32).device(DefaultDevice()));
   torch::Scalar shift_amount = 3;
   torch::Tensor result = torch::__lshift__(input, shift_amount);
   ForEachDevice([&](const torch::Device& device) {
@@ -8984,7 +9548,7 @@ TEST_F(LazyOpsTest, TestLshiftScalar) {
 
 TEST_F(LazyOpsTest, TestLshiftScalarInPlace) {
   torch::Tensor input = torch::ones(
-      {4, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+      {4, 2}, torch::TensorOptions(torch::kInt32).device(DefaultDevice()));
   torch::Scalar shift_amount = 3;
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -8997,25 +9561,30 @@ TEST_F(LazyOpsTest, TestLshiftScalarInPlace) {
 
 TEST_F(LazyOpsTest, TestRshift) {
   torch::Tensor input = torch::ones(
-      {4, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+      {4, 2}, torch::TensorOptions(torch::kInt32).device(DefaultDevice()));
   torch::Tensor shift_amount = torch::randint(
-      16, input.sizes(), torch::TensorOptions().device(DefaultDevice()));
+      16,
+      input.sizes(),
+      torch::TensorOptions(torch::kInt32).device(DefaultDevice()));
   torch::Tensor result = torch::__rshift__(input, shift_amount);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     torch::Tensor lazy_shift_amount = CopyToDevice(shift_amount, device);
-    torch::Tensor lazy_result = torch::__rshift__(lazy_input, lazy_shift_amount);
+    torch::Tensor lazy_result =
+        torch::__rshift__(lazy_input, lazy_shift_amount);
     AllClose(result, lazy_result);
   });
 }
 
 TEST_F(LazyOpsTest, TestRshiftInPlace) {
   torch::Tensor input = torch::ones(
-      {4, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+      {4, 2}, torch::TensorOptions(torch::kInt32).device(DefaultDevice()));
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
     torch::Tensor shift_amount = torch::randint(
-        16, input.sizes(), torch::TensorOptions().device(DefaultDevice()));
+        16,
+        input.sizes(),
+        torch::TensorOptions(torch::kInt32).device(DefaultDevice()));
     torch::Tensor result = input.__irshift__(shift_amount);
     torch::Tensor lazy_shift_amount = CopyToDevice(shift_amount, device);
     torch::Tensor lazy_result = lazy_input.__irshift__(lazy_shift_amount);
@@ -9026,7 +9595,7 @@ TEST_F(LazyOpsTest, TestRshiftInPlace) {
 
 TEST_F(LazyOpsTest, TestRshiftScalar) {
   torch::Tensor input = torch::ones(
-      {4, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+      {4, 2}, torch::TensorOptions(torch::kInt32).device(DefaultDevice()));
   torch::Scalar shift_amount = 3;
   torch::Tensor result = torch::__rshift__(input, shift_amount);
   ForEachDevice([&](const torch::Device& device) {
@@ -9038,7 +9607,7 @@ TEST_F(LazyOpsTest, TestRshiftScalar) {
 
 TEST_F(LazyOpsTest, TestRshiftScalarInPlace) {
   torch::Tensor input = torch::ones(
-      {4, 2}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+      {4, 2}, torch::TensorOptions(torch::kInt32).device(DefaultDevice()));
   torch::Scalar shift_amount = 3;
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
@@ -9110,9 +9679,9 @@ TEST_F(LazyOpsTest, TestReflectionPad2dRank3) {
 }
 
 TEST_F(LazyOpsTest, TestReflectionPad2dRank4) {
-  torch::Tensor input =
-      torch::rand({2, 2, 3, 4},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 2, 3, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   std::vector<int64_t> pad{2, 2, 2, 2};
   torch::Tensor output = torch::reflection_pad2d(input, pad);
   ForEachDevice([&](const torch::Device& device) {
@@ -9128,10 +9697,14 @@ TEST_F(LazyOpsTest, TestReflectionPad2dBackward) {
     return torch::reflection_pad2d(inputs[0], pad);
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::rand({1, 2, 4, 4}, torch::TensorOptions(torch::kFloat)
-                                                .device(DefaultDevice())
-                                                .requires_grad(true))},
-                 device, testfn);
+    TestBackward(
+        {torch::rand(
+            {1, 2, 4, 4},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn);
   });
 }
 
@@ -9165,10 +9738,14 @@ TEST_F(LazyOpsTest, TestReplicationPad1dBackward) {
     return torch::replication_pad1d(inputs[0], pad);
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::rand({2, 4}, torch::TensorOptions(torch::kFloat)
-                                          .device(DefaultDevice())
-                                          .requires_grad(true))},
-                 device, testfn);
+    TestBackward(
+        {torch::rand(
+            {2, 4},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn);
   });
 }
 
@@ -9202,10 +9779,14 @@ TEST_F(LazyOpsTest, TestReplicationPad2dBackward) {
     return torch::replication_pad2d(inputs[0], pad);
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::rand({2, 3, 4}, torch::TensorOptions(torch::kFloat)
-                                             .device(DefaultDevice())
-                                             .requires_grad(true))},
-                 device, testfn);
+    TestBackward(
+        {torch::rand(
+            {2, 3, 4},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn);
   });
 }
 
@@ -9246,14 +9827,18 @@ TEST_F(LazyOpsTest, TestAsStridedWithOffset) {
   std::vector<int64_t> size = {4, 4, 2};
   std::vector<int64_t> stride = {8, 2, 1};
   int64_t storage_offset = 4;
-  torch::Tensor output =
-      torch::as_strided(input, /*size=*/size, /*stride=*/stride,
-                        /*storage_offset=*/storage_offset);
+  torch::Tensor output = torch::as_strided(
+      input,
+      /*size=*/size,
+      /*stride=*/stride,
+      /*storage_offset=*/storage_offset);
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor lazy_input = CopyToDevice(input, device);
-    torch::Tensor lazy_output =
-        torch::as_strided(lazy_input, /*size=*/size, /*stride=*/stride,
-                          /*storage_offset=*/storage_offset);
+    torch::Tensor lazy_output = torch::as_strided(
+        lazy_input,
+        /*size=*/size,
+        /*stride=*/stride,
+        /*storage_offset=*/storage_offset);
     AllClose(output, lazy_output);
   });
 }
@@ -9294,20 +9879,24 @@ TEST_F(LazyOpsTest, TestAvgPool2DBackward) {
         for (bool ceil_mode : {false, true}) {
           auto testfn =
               [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
-            return torch::avg_pool2d(inputs[0],
-                                     /*kernel_size=*/{kernel_size, kernel_size},
-                                     /*stride=*/{stride, stride},
-                                     /*padding=*/{padding, padding},
-                                     /*ceil_mode=*/ceil_mode,
-                                     /*count_include_pad=*/count_include_pad);
+            return torch::avg_pool2d(
+                inputs[0],
+                /*kernel_size=*/{kernel_size, kernel_size},
+                /*stride=*/{stride, stride},
+                /*padding=*/{padding, padding},
+                /*ceil_mode=*/ceil_mode,
+                /*count_include_pad=*/count_include_pad);
           };
 
           ForEachDevice([&](const torch::Device& device) {
             TestBackward(
-                {torch::rand({1, 1, 7, 7}, torch::TensorOptions(torch::kFloat)
-                                               .device(DefaultDevice())
-                                               .requires_grad(true))},
-                device, testfn);
+                {torch::rand(
+                    {1, 1, 7, 7},
+                    torch::TensorOptions(torch::kFloat)
+                        .device(DefaultDevice())
+                        .requires_grad(true))},
+                device,
+                testfn);
           });
         }
       }
@@ -9334,11 +9923,14 @@ TEST_F(LazyOpsTest, TestAvgPool3DBackward) {
           };
 
           ForEachDevice([&](const torch::Device& device) {
-            TestBackward({torch::rand({1, 1, 7, 7, 7},
-                                      torch::TensorOptions(torch::kFloat)
-                                          .device(DefaultDevice())
-                                          .requires_grad(true))},
-                         device, testfn);
+            TestBackward(
+                {torch::rand(
+                    {1, 1, 7, 7, 7},
+                    torch::TensorOptions(torch::kFloat)
+                        .device(DefaultDevice())
+                        .requires_grad(true))},
+                device,
+                testfn);
           });
         }
       }
@@ -9355,20 +9947,24 @@ TEST_F(LazyOpsTest, TestAvgPool2DNoBatchBackward) {
         for (bool ceil_mode : {false, true}) {
           auto testfn =
               [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
-            return torch::avg_pool2d(inputs[0],
-                                     /*kernel_size=*/{kernel_size, kernel_size},
-                                     /*stride=*/{stride, stride},
-                                     /*padding=*/{padding, padding},
-                                     /*ceil_mode=*/ceil_mode,
-                                     /*count_include_pad=*/count_include_pad);
+            return torch::avg_pool2d(
+                inputs[0],
+                /*kernel_size=*/{kernel_size, kernel_size},
+                /*stride=*/{stride, stride},
+                /*padding=*/{padding, padding},
+                /*ceil_mode=*/ceil_mode,
+                /*count_include_pad=*/count_include_pad);
           };
 
           ForEachDevice([&](const torch::Device& device) {
             TestBackward(
-                {torch::rand({1, 7, 7}, torch::TensorOptions(torch::kFloat)
-                                            .device(DefaultDevice())
-                                            .requires_grad(true))},
-                device, testfn);
+                {torch::rand(
+                    {1, 7, 7},
+                    torch::TensorOptions(torch::kFloat)
+                        .device(DefaultDevice())
+                        .requires_grad(true))},
+                device,
+                testfn);
           });
         }
       }
@@ -9396,10 +9992,13 @@ TEST_F(LazyOpsTest, TestAvgPool3DNoBatchBackward) {
 
           ForEachDevice([&](const torch::Device& device) {
             TestBackward(
-                {torch::rand({1, 7, 7, 7}, torch::TensorOptions(torch::kFloat)
-                                               .device(DefaultDevice())
-                                               .requires_grad(true))},
-                device, testfn);
+                {torch::rand(
+                    {1, 7, 7, 7},
+                    torch::TensorOptions(torch::kFloat)
+                        .device(DefaultDevice())
+                        .requires_grad(true))},
+                device,
+                testfn);
           });
         }
       }
@@ -9419,10 +10018,13 @@ TEST_F(LazyOpsTest, TestAdaptiveAvgPool3DNoBatchBackward) {
     };
     ForEachDevice([&](const torch::Device& device) {
       TestBackward(
-          {torch::rand({1, 56, 28, 28}, torch::TensorOptions(torch::kFloat)
-                                            .device(DefaultDevice())
-                                            .requires_grad(true))},
-          device, testfn);
+          {torch::rand(
+              {1, 56, 28, 28},
+              torch::TensorOptions(torch::kFloat)
+                  .device(DefaultDevice())
+                  .requires_grad(true))},
+          device,
+          testfn);
     });
   }
 }
@@ -9439,10 +10041,13 @@ TEST_F(LazyOpsTest, TestAdaptiveAvgPool3DBackward) {
     };
     ForEachDevice([&](const torch::Device& device) {
       TestBackward(
-          {torch::rand({4, 1, 56, 28, 28}, torch::TensorOptions(torch::kFloat)
-                                               .device(DefaultDevice())
-                                               .requires_grad(true))},
-          device, testfn);
+          {torch::rand(
+              {4, 1, 56, 28, 28},
+              torch::TensorOptions(torch::kFloat)
+                  .device(DefaultDevice())
+                  .requires_grad(true))},
+          device,
+          testfn);
     });
   }
 }
@@ -9455,10 +10060,13 @@ TEST_F(LazyOpsTest, TestAdaptiveAvgPool2DBackward) {
     };
     ForEachDevice([&](const torch::Device& device) {
       TestBackward(
-          {torch::rand({4, 1, 56, 56}, torch::TensorOptions(torch::kFloat)
-                                           .device(DefaultDevice())
-                                           .requires_grad(true))},
-          device, testfn);
+          {torch::rand(
+              {4, 1, 56, 56},
+              torch::TensorOptions(torch::kFloat)
+                  .device(DefaultDevice())
+                  .requires_grad(true))},
+          device,
+          testfn);
     });
   }
 }
@@ -9470,9 +10078,12 @@ TEST_F(LazyOpsTest, TestAdaptiveAvgPool2DNoBatchBackward) {
       return torch::adaptive_avg_pool2d(inputs[0], {output_size, output_size});
     };
     ForEachDevice([&](const torch::Device& device) {
-      TestBackward({torch::rand({1, 56, 56}, torch::TensorOptions(torch::kFloat)
-                                                 .requires_grad(true))},
-                   device, testfn);
+      TestBackward(
+          {torch::rand(
+              {1, 56, 56},
+              torch::TensorOptions(torch::kFloat).requires_grad(true))},
+          device,
+          testfn);
     });
   }
 }
@@ -9486,36 +10097,45 @@ TEST_F(LazyOpsTest, TestConv2D) {
       for (bool with_bias : {true, false}) {
         for (int dilation = 1; dilation <= 3; ++dilation) {
           for (int groups :
-               {1, 2, 4}) {  // covers normal, grouped, depthwise conv.
+               {1, 2, 4}) { // covers normal, grouped, depthwise conv.
             ForEachDevice([&](const torch::Device& device) {
               torch::Tensor input = torch::rand(
                   {1, in_channels, 7, 7},
                   torch::TensorOptions(torch::kDouble).device(DefaultDevice()));
               torch::Tensor weight = torch::rand(
-                  {out_channels, in_channels / groups, kernel_size,
+                  {out_channels,
+                   in_channels / groups,
+                   kernel_size,
                    kernel_size},
                   torch::TensorOptions(torch::kDouble).device(DefaultDevice()));
-              torch::Tensor bias =
-                  with_bias ? torch::rand({out_channels},
-                                          torch::TensorOptions(torch::kDouble)
-                                              .device(DefaultDevice()))
-                            : torch::Tensor();
+              torch::Tensor bias = with_bias
+                  ? torch::rand(
+                        {out_channels},
+                        torch::TensorOptions(torch::kDouble)
+                            .device(DefaultDevice()))
+                  : torch::Tensor();
 
               torch::Tensor lazy_input = CopyToDevice(input, device);
               torch::Tensor lazy_weight = CopyToDevice(weight, device);
               torch::Tensor lazy_bias =
                   with_bias ? CopyToDevice(bias, device) : torch::Tensor();
 
-              torch::Tensor output =
-                  torch::conv2d(input, weight, bias,
-                                /*stride=*/{stride, stride},
-                                /*padding=*/{padding, padding},
-                                /*dilation=*/{dilation, dilation}, groups);
-              torch::Tensor lazy_output =
-                  torch::conv2d(lazy_input, lazy_weight, lazy_bias,
-                                /*stride=*/{stride, stride},
-                                /*padding=*/{padding, padding},
-                                /*dilation=*/{dilation, dilation}, groups);
+              torch::Tensor output = torch::conv2d(
+                  input,
+                  weight,
+                  bias,
+                  /*stride=*/{stride, stride},
+                  /*padding=*/{padding, padding},
+                  /*dilation=*/{dilation, dilation},
+                  groups);
+              torch::Tensor lazy_output = torch::conv2d(
+                  lazy_input,
+                  lazy_weight,
+                  lazy_bias,
+                  /*stride=*/{stride, stride},
+                  /*padding=*/{padding, padding},
+                  /*dilation=*/{dilation, dilation},
+                  groups);
               AllClose(output, lazy_output);
             });
           }
@@ -9534,32 +10154,43 @@ TEST_F(LazyOpsTest, TestConv2DBackward) {
       for (bool with_bias : {true, false}) {
         for (int dilation = 1; dilation <= 3; ++dilation) {
           for (int groups :
-               {1, 2, 4}) {  // covers normal, grouped, depthwise conv.
+               {1, 2, 4}) { // covers normal, grouped, depthwise conv.
             auto testfn =
                 [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
-              return torch::conv2d(inputs[0], inputs[1], inputs[2],
-                                   /*stride=*/{stride, stride},
-                                   /*padding=*/{padding, padding},
-                                   /*dilation=*/{dilation, dilation}, groups);
+              return torch::conv2d(
+                  inputs[0],
+                  inputs[1],
+                  inputs[2],
+                  /*stride=*/{stride, stride},
+                  /*padding=*/{padding, padding},
+                  /*dilation=*/{dilation, dilation},
+                  groups);
             };
 
             ForEachDevice([&](const torch::Device& device) {
-              torch::Tensor bias =
-                  with_bias ? torch::rand({out_channels},
-                                          torch::TensorOptions(torch::kDouble)
-                                              .device(DefaultDevice()))
-                            : torch::Tensor();
-              TestBackward({torch::rand({1, in_channels, 7, 7},
-                                        torch::TensorOptions(torch::kDouble)
-                                            .device(DefaultDevice())
-                                            .requires_grad(true)),
-                            torch::rand({out_channels, in_channels / groups,
-                                         kernel_size, kernel_size},
-                                        torch::TensorOptions(torch::kDouble)
-                                            .device(DefaultDevice())
-                                            .requires_grad(true)),
-                            bias},
-                           device, testfn);
+              torch::Tensor bias = with_bias
+                  ? torch::rand(
+                        {out_channels},
+                        torch::TensorOptions(torch::kDouble)
+                            .device(DefaultDevice()))
+                  : torch::Tensor();
+              TestBackward(
+                  {torch::rand(
+                       {1, in_channels, 7, 7},
+                       torch::TensorOptions(torch::kDouble)
+                           .device(DefaultDevice())
+                           .requires_grad(true)),
+                   torch::rand(
+                       {out_channels,
+                        in_channels / groups,
+                        kernel_size,
+                        kernel_size},
+                       torch::TensorOptions(torch::kDouble)
+                           .device(DefaultDevice())
+                           .requires_grad(true)),
+                   bias},
+                  device,
+                  testfn);
             });
           }
         };
@@ -9576,14 +10207,17 @@ TEST_F(LazyOpsTest, TestTransposedConv2DBackward) {
     for (int padding = 0; padding <= 1; ++padding) {
       for (int dilation = 1; dilation <= 2; ++dilation) {
         for (int output_padding = 0;
-             output_padding < std::max(stride, dilation); ++output_padding) {
+             output_padding < std::max(stride, dilation);
+             ++output_padding) {
           for (bool with_bias : {true, false}) {
             for (int groups :
-                 {1, 2, 4}) {  // covers normal, grouped, depthwise conv.
+                 {1, 2, 4}) { // covers normal, grouped, depthwise conv.
               auto testfn = [&](const std::vector<torch::Tensor>& inputs)
                   -> torch::Tensor {
                 return torch::conv_transpose2d(
-                    inputs[0], inputs[1], inputs[2],
+                    inputs[0],
+                    inputs[1],
+                    inputs[2],
                     /*stride=*/{stride, stride + 1},
                     /*padding=*/{padding, padding + 1},
                     /*output_padding=*/output_padding,
@@ -9592,23 +10226,31 @@ TEST_F(LazyOpsTest, TestTransposedConv2DBackward) {
               };
               ForEachDevice([&](const torch::Device& device) {
                 torch::Tensor input = torch::rand(
-                    {4, out_channels, 7, 7}, torch::TensorOptions(torch::kFloat)
-                                                 .device(DefaultDevice())
-                                                 .requires_grad(true));
-                torch::Tensor weight =
-                    torch::rand({out_channels, in_channels / groups,
-                                 kernel_size, kernel_size},
-                                torch::TensorOptions(torch::kFloat)
-                                    .device(DefaultDevice())
-                                    .requires_grad(true));
-                torch::Tensor bias =
-                    with_bias ? torch::rand({in_channels},
-                                            torch::TensorOptions(torch::kFloat)
-                                                .device(DefaultDevice())
-                                                .requires_grad(true))
-                              : torch::Tensor();
-                TestBackward({input, weight, bias}, device, testfn,
-                             /*rtol=*/1e-5, /*atol=*/1e-5);
+                    {4, out_channels, 7, 7},
+                    torch::TensorOptions(torch::kFloat)
+                        .device(DefaultDevice())
+                        .requires_grad(true));
+                torch::Tensor weight = torch::rand(
+                    {out_channels,
+                     in_channels / groups,
+                     kernel_size,
+                     kernel_size},
+                    torch::TensorOptions(torch::kFloat)
+                        .device(DefaultDevice())
+                        .requires_grad(true));
+                torch::Tensor bias = with_bias
+                    ? torch::rand(
+                          {in_channels},
+                          torch::TensorOptions(torch::kFloat)
+                              .device(DefaultDevice())
+                              .requires_grad(true))
+                    : torch::Tensor();
+                TestBackward(
+                    {input, weight, bias},
+                    device,
+                    testfn,
+                    /*rtol=*/1e-5,
+                    /*atol=*/1e-5);
               });
             }
           };
@@ -9627,33 +10269,44 @@ TEST_F(LazyOpsTest, TestConv3DBackward) {
       for (bool with_bias : {true, false}) {
         for (int dilation = 1; dilation <= 2; ++dilation) {
           for (int groups :
-               {1, 2, 4}) {  // covers normal, grouped, depthwise conv.
+               {1, 2, 4}) { // covers normal, grouped, depthwise conv.
             auto testfn =
                 [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
-              return torch::conv3d(inputs[0], inputs[1], inputs[2],
-                                   /*stride=*/{stride, stride, stride},
-                                   /*padding=*/{padding, padding, padding},
-                                   /*dilation=*/{dilation, dilation, dilation},
-                                   groups);
+              return torch::conv3d(
+                  inputs[0],
+                  inputs[1],
+                  inputs[2],
+                  /*stride=*/{stride, stride, stride},
+                  /*padding=*/{padding, padding, padding},
+                  /*dilation=*/{dilation, dilation, dilation},
+                  groups);
             };
 
             ForEachDevice([&](const torch::Device& device) {
-              torch::Tensor bias =
-                  with_bias ? torch::rand({out_channels},
-                                          torch::TensorOptions(torch::kDouble)
-                                              .device(DefaultDevice()))
-                            : torch::Tensor();
-              TestBackward({torch::rand({4, in_channels, 7, 7, 7},
-                                        torch::TensorOptions(torch::kDouble)
-                                            .device(DefaultDevice())
-                                            .requires_grad(true)),
-                            torch::rand({out_channels, in_channels / groups,
-                                         kernel_size, kernel_size, kernel_size},
-                                        torch::TensorOptions(torch::kDouble)
-                                            .device(DefaultDevice())
-                                            .requires_grad(true)),
-                            bias},
-                           device, testfn);
+              torch::Tensor bias = with_bias
+                  ? torch::rand(
+                        {out_channels},
+                        torch::TensorOptions(torch::kDouble)
+                            .device(DefaultDevice()))
+                  : torch::Tensor();
+              TestBackward(
+                  {torch::rand(
+                       {4, in_channels, 7, 7, 7},
+                       torch::TensorOptions(torch::kDouble)
+                           .device(DefaultDevice())
+                           .requires_grad(true)),
+                   torch::rand(
+                       {out_channels,
+                        in_channels / groups,
+                        kernel_size,
+                        kernel_size,
+                        kernel_size},
+                       torch::TensorOptions(torch::kDouble)
+                           .device(DefaultDevice())
+                           .requires_grad(true)),
+                   bias},
+                  device,
+                  testfn);
             });
           }
         };
@@ -9670,14 +10323,17 @@ TEST_F(LazyOpsTest, TestTransposedConv3DBackward) {
     for (int padding = 0; padding <= 1; ++padding) {
       for (int dilation = 1; dilation <= 2; ++dilation) {
         for (int output_padding = 0;
-             output_padding < std::max(stride, dilation); ++output_padding) {
+             output_padding < std::max(stride, dilation);
+             ++output_padding) {
           for (bool with_bias : {true, false}) {
             for (int groups :
-                 {1, 2, 4}) {  // covers normal, grouped, depthwise conv.
+                 {1, 2, 4}) { // covers normal, grouped, depthwise conv.
               auto testfn = [&](const std::vector<torch::Tensor>& inputs)
                   -> torch::Tensor {
                 return torch::conv_transpose3d(
-                    inputs[0], inputs[1], inputs[2],
+                    inputs[0],
+                    inputs[1],
+                    inputs[2],
                     /*stride=*/{stride, stride + 1, stride},
                     /*padding=*/{padding, padding + 1, stride},
                     /*output_padding=*/output_padding,
@@ -9685,23 +10341,27 @@ TEST_F(LazyOpsTest, TestTransposedConv3DBackward) {
                     /*dilation=*/{dilation, dilation + 1, dilation});
               };
               ForEachDevice([&](const torch::Device& device) {
-                torch::Tensor input =
-                    torch::rand({4, out_channels, 7, 7, 7},
-                                torch::TensorOptions(torch::kDouble)
-                                    .device(DefaultDevice())
-                                    .requires_grad(true));
-                torch::Tensor weight =
-                    torch::rand({out_channels, in_channels / groups,
-                                 kernel_size, kernel_size, kernel_size},
-                                torch::TensorOptions(torch::kDouble)
-                                    .device(DefaultDevice())
-                                    .requires_grad(true));
-                torch::Tensor bias =
-                    with_bias ? torch::rand({in_channels},
-                                            torch::TensorOptions(torch::kDouble)
-                                                .device(DefaultDevice())
-                                                .requires_grad(true))
-                              : torch::Tensor();
+                torch::Tensor input = torch::rand(
+                    {4, out_channels, 7, 7, 7},
+                    torch::TensorOptions(torch::kDouble)
+                        .device(DefaultDevice())
+                        .requires_grad(true));
+                torch::Tensor weight = torch::rand(
+                    {out_channels,
+                     in_channels / groups,
+                     kernel_size,
+                     kernel_size,
+                     kernel_size},
+                    torch::TensorOptions(torch::kDouble)
+                        .device(DefaultDevice())
+                        .requires_grad(true));
+                torch::Tensor bias = with_bias
+                    ? torch::rand(
+                          {in_channels},
+                          torch::TensorOptions(torch::kDouble)
+                              .device(DefaultDevice())
+                              .requires_grad(true))
+                    : torch::Tensor();
                 TestBackward({input, weight, bias}, device, testfn);
               });
             }
@@ -9721,18 +10381,23 @@ TEST_F(LazyOpsTest, TestMaxPool2DBackward) {
         auto testfn =
             [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
           return torch::max_pool2d(
-              inputs[0], /*kernel_size=*/{kernel_size, kernel_size},
+              inputs[0],
+              /*kernel_size=*/{kernel_size, kernel_size},
               /*stride=*/{stride, stride},
-              /*padding=*/{padding, padding}, /*dilation=*/{1, 1},
+              /*padding=*/{padding, padding},
+              /*dilation=*/{1, 1},
               /*ceil_mode=*/ceil_mode);
         };
 
         ForEachDevice([&](const torch::Device& device) {
           TestBackward(
-              {torch::rand({1, 2, 8, 8}, torch::TensorOptions(torch::kFloat)
-                                             .device(DefaultDevice())
-                                             .requires_grad(true))},
-              device, testfn);
+              {torch::rand(
+                  {1, 2, 8, 8},
+                  torch::TensorOptions(torch::kFloat)
+                      .device(DefaultDevice())
+                      .requires_grad(true))},
+              device,
+              testfn);
         });
       }
     }
@@ -9751,16 +10416,20 @@ TEST_F(LazyOpsTest, TestMaxPool3DBackward) {
               inputs[0],
               /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
               /*stride=*/{stride, stride, stride},
-              /*padding=*/{padding, padding, padding}, /*dilation=*/{1, 1, 1},
+              /*padding=*/{padding, padding, padding},
+              /*dilation=*/{1, 1, 1},
               /*ceil_mode=*/ceil_mode);
         };
 
         ForEachDevice([&](const torch::Device& device) {
           TestBackward(
-              {torch::rand({1, 2, 4, 4, 4}, torch::TensorOptions(torch::kFloat)
-                                                .device(DefaultDevice())
-                                                .requires_grad(true))},
-              device, testfn);
+              {torch::rand(
+                  {1, 2, 4, 4, 4},
+                  torch::TensorOptions(torch::kFloat)
+                      .device(DefaultDevice())
+                      .requires_grad(true))},
+              device,
+              testfn);
         });
       }
     }
@@ -9776,18 +10445,23 @@ TEST_F(LazyOpsTest, TestMaxPool2DNoBatchBackward) {
         auto testfn =
             [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
           return torch::max_pool2d(
-              inputs[0], /*kernel_size=*/{kernel_size, kernel_size},
+              inputs[0],
+              /*kernel_size=*/{kernel_size, kernel_size},
               /*stride=*/{stride, stride},
-              /*padding=*/{padding, padding}, /*dilation=*/{1, 1},
+              /*padding=*/{padding, padding},
+              /*dilation=*/{1, 1},
               /*ceil_mode=*/ceil_mode);
         };
 
         ForEachDevice([&](const torch::Device& device) {
           TestBackward(
-              {torch::rand({2, 8, 8}, torch::TensorOptions(torch::kFloat)
-                                          .device(DefaultDevice())
-                                          .requires_grad(true))},
-              device, testfn);
+              {torch::rand(
+                  {2, 8, 8},
+                  torch::TensorOptions(torch::kFloat)
+                      .device(DefaultDevice())
+                      .requires_grad(true))},
+              device,
+              testfn);
         });
       }
     }
@@ -9806,16 +10480,20 @@ TEST_F(LazyOpsTest, TestMaxPool3DNoBatchBackward) {
               inputs[0],
               /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
               /*stride=*/{stride, stride, stride},
-              /*padding=*/{padding, padding, padding}, /*dilation=*/{1, 1, 1},
+              /*padding=*/{padding, padding, padding},
+              /*dilation=*/{1, 1, 1},
               /*ceil_mode=*/ceil_mode);
         };
 
         ForEachDevice([&](const torch::Device& device) {
           TestBackward(
-              {torch::rand({2, 4, 4, 4}, torch::TensorOptions(torch::kFloat)
-                                             .device(DefaultDevice())
-                                             .requires_grad(true))},
-              device, testfn);
+              {torch::rand(
+                  {2, 4, 4, 4},
+                  torch::TensorOptions(torch::kFloat)
+                      .device(DefaultDevice())
+                      .requires_grad(true))},
+              device,
+              testfn);
         });
       }
     }
@@ -9824,9 +10502,9 @@ TEST_F(LazyOpsTest, TestMaxPool3DNoBatchBackward) {
 
 TEST_F(LazyOpsTest, TestMaxUnpool2DBackward) {
   int kernel_size = 2;
-  torch::Tensor input =
-      torch::rand({2, 2, 8, 8},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {2, 2, 8, 8},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   for (int stride = 1; stride <= 2; ++stride) {
     for (int padding = 0; padding <= 1; ++padding) {
       // Test ceil_mode=true through the CPU interop.
@@ -9835,9 +10513,11 @@ TEST_F(LazyOpsTest, TestMaxUnpool2DBackward) {
           torch::Tensor output;
           torch::Tensor indices;
           std::tie(output, indices) = torch::max_pool2d_with_indices(
-              input, /*kernel_size=*/{kernel_size, kernel_size},
+              input,
+              /*kernel_size=*/{kernel_size, kernel_size},
               /*stride=*/{stride, stride},
-              /*padding=*/{padding, padding}, /*dilation=*/{dilation, dilation},
+              /*padding=*/{padding, padding},
+              /*dilation=*/{dilation, dilation},
               /*ceil_mode=*/ceil_mode);
 
           std::vector<int64_t> output_size({input.size(2), input.size(3)});
@@ -9847,8 +10527,8 @@ TEST_F(LazyOpsTest, TestMaxUnpool2DBackward) {
           };
 
           ForEachDevice([&](const torch::Device& device) {
-            TestBackward({output.requires_grad_(true), indices}, device,
-                         testfn);
+            TestBackward(
+                {output.requires_grad_(true), indices}, device, testfn);
           });
         }
       }
@@ -9858,9 +10538,9 @@ TEST_F(LazyOpsTest, TestMaxUnpool2DBackward) {
 
 TEST_F(LazyOpsTest, TestMaxUnpool3DBackward) {
   int kernel_size = 2;
-  torch::Tensor input =
-      torch::rand({1, 1, 4, 4, 4},
-                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  torch::Tensor input = torch::rand(
+      {1, 1, 4, 4, 4},
+      torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   for (int stride = 1; stride <= 2; ++stride) {
     for (int padding = 0; padding <= 1; ++padding) {
       // Test ceil_mode=true through the CPU interop.
@@ -9869,7 +10549,8 @@ TEST_F(LazyOpsTest, TestMaxUnpool3DBackward) {
           torch::Tensor output;
           torch::Tensor indices;
           std::tie(output, indices) = torch::max_pool3d_with_indices(
-              input, /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
+              input,
+              /*kernel_size=*/{kernel_size, kernel_size, kernel_size},
               /*stride=*/{stride, stride, stride},
               /*padding=*/{padding, padding, padding},
               /*dilation=*/{dilation, dilation, dilation},
@@ -9879,14 +10560,17 @@ TEST_F(LazyOpsTest, TestMaxUnpool3DBackward) {
               {input.size(2), input.size(3), input.size(4)});
           auto testfn =
               [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
-            return torch::max_unpool3d(inputs[0], inputs[1], output_size,
-                                       /*stride=*/{stride, stride, stride},
-                                       /*padding=*/{padding, padding, padding});
+            return torch::max_unpool3d(
+                inputs[0],
+                inputs[1],
+                output_size,
+                /*stride=*/{stride, stride, stride},
+                /*padding=*/{padding, padding, padding});
           };
 
           ForEachDevice([&](const torch::Device& device) {
-            TestBackward({output.requires_grad_(true), indices}, device,
-                         testfn);
+            TestBackward(
+                {output.requires_grad_(true), indices}, device, testfn);
           });
         }
       }
@@ -9899,10 +10583,16 @@ TEST_F(LazyOpsTest, TestTanhBackward) {
     return torch::tanh(inputs[0]);
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::rand({2, 2}, torch::TensorOptions(torch::kFloat)
-                                          .device(DefaultDevice())
-                                          .requires_grad(true))},
-                 device, testfn, /*rtol=*/1e-3, /*atol=*/1e-5);
+    TestBackward(
+        {torch::rand(
+            {2, 2},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn,
+        /*rtol=*/1e-3,
+        /*atol=*/1e-5);
   });
 }
 
@@ -9911,10 +10601,14 @@ TEST_F(LazyOpsTest, TestSigmoidBackward) {
     return torch::sigmoid(inputs[0]);
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::rand({2, 2}, torch::TensorOptions(torch::kFloat)
-                                          .device(DefaultDevice())
-                                          .requires_grad(true))},
-                 device, testfn);
+    TestBackward(
+        {torch::rand(
+            {2, 2},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn);
   });
 }
 
@@ -9923,10 +10617,16 @@ TEST_F(LazyOpsTest, TestLogSigmoidBackward) {
     return torch::log_sigmoid(inputs[0]);
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::rand({2, 2}, torch::TensorOptions(torch::kFloat)
-                                          .device(DefaultDevice())
-                                          .requires_grad(true))},
-                 device, testfn, /*rtol=*/1e-3, /*atol=*/1e-5);
+    TestBackward(
+        {torch::rand(
+            {2, 2},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn,
+        /*rtol=*/1e-3,
+        /*atol=*/1e-5);
   });
 }
 
@@ -9939,10 +10639,15 @@ TEST_F(LazyOpsTest, TestLogSoftmaxBackward) {
 
     ForEachDevice([&](const torch::Device& device) {
       TestBackward(
-          {torch::rand({5, 3, 4, 2}, torch::TensorOptions(torch::kFloat)
-                                         .device(DefaultDevice())
-                                         .requires_grad(true))},
-          device, testfn, /*rtol=*/1e-3, /*atol=*/1e-4);
+          {torch::rand(
+              {5, 3, 4, 2},
+              torch::TensorOptions(torch::kFloat)
+                  .device(DefaultDevice())
+                  .requires_grad(true))},
+          device,
+          testfn,
+          /*rtol=*/1e-3,
+          /*atol=*/1e-4);
     });
   }
 }
@@ -9956,10 +10661,15 @@ TEST_F(LazyOpsTest, TestSoftmaxBackward) {
 
     ForEachDevice([&](const torch::Device& device) {
       TestBackward(
-          {torch::rand({5, 3, 4, 2}, torch::TensorOptions(torch::kFloat)
-                                         .device(DefaultDevice())
-                                         .requires_grad(true))},
-          device, testfn, /*rtol=*/1e-3, /*atol=*/1e-4);
+          {torch::rand(
+              {5, 3, 4, 2},
+              torch::TensorOptions(torch::kFloat)
+                  .device(DefaultDevice())
+                  .requires_grad(true))},
+          device,
+          testfn,
+          /*rtol=*/1e-3,
+          /*atol=*/1e-4);
     });
   }
 }
@@ -9969,10 +10679,15 @@ TEST_F(LazyOpsTest, TestSoftplusBackward) {
     return torch::softplus(inputs[0]);
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::rand({2, 1, 4, 6}, torch::TensorOptions(torch::kFloat)
-                                                .device(DefaultDevice())
-                                                .requires_grad(true))},
-                 device, testfn, /*rtol=*/1e-4);
+    TestBackward(
+        {torch::rand(
+            {2, 1, 4, 6},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn,
+        /*rtol=*/1e-4);
   });
 }
 
@@ -9981,10 +10696,14 @@ TEST_F(LazyOpsTest, TestReluBackward) {
     return torch::relu(inputs[0]);
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::rand({2, 1, 4, 6}, torch::TensorOptions(torch::kFloat)
-                                                .device(DefaultDevice())
-                                                .requires_grad(true))},
-                 device, testfn);
+    TestBackward(
+        {torch::rand(
+            {2, 1, 4, 6},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn);
   });
 }
 
@@ -9993,10 +10712,14 @@ TEST_F(LazyOpsTest, TestRreluBackward) {
     return torch::rrelu(inputs[0]);
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::rand({2, 1, 4, 6}, torch::TensorOptions(torch::kFloat)
-                                                .device(DefaultDevice())
-                                                .requires_grad(true))},
-                 device, testfn);
+    TestBackward(
+        {torch::rand(
+            {2, 1, 4, 6},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn);
   });
 }
 
@@ -10005,10 +10728,14 @@ TEST_F(LazyOpsTest, TestHardshrinkBackward) {
     return torch::hardshrink(inputs[0]);
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::randn({100}, torch::TensorOptions(torch::kFloat)
-                                          .device(DefaultDevice())
-                                          .requires_grad(true))},
-                 device, testfn);
+    TestBackward(
+        {torch::randn(
+            {100},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn);
   });
 }
 
@@ -10017,10 +10744,14 @@ TEST_F(LazyOpsTest, TestSoftshrinkBackward) {
     return torch::softshrink(inputs[0]);
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::randn({100}, torch::TensorOptions(torch::kFloat)
-                                          .device(DefaultDevice())
-                                          .requires_grad(true))},
-                 device, testfn);
+    TestBackward(
+        {torch::randn(
+            {100},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn);
   });
 }
 
@@ -10029,10 +10760,14 @@ TEST_F(LazyOpsTest, TestHardtanhBackward) {
     return torch::hardtanh(inputs[0]);
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::randn({100}, torch::TensorOptions(torch::kFloat)
-                                          .device(DefaultDevice())
-                                          .requires_grad(true))},
-                 device, testfn);
+    TestBackward(
+        {torch::randn(
+            {100},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn);
   });
 }
 
@@ -10044,10 +10779,14 @@ TEST_F(LazyOpsTest, TestEluBackward) {
     return torch::elu(inputs[0], alpha, scale, input_scale);
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::rand({2, 1, 4, 6}, torch::TensorOptions(torch::kFloat)
-                                                .device(DefaultDevice())
-                                                .requires_grad(true))},
-                 device, testfn);
+    TestBackward(
+        {torch::rand(
+            {2, 1, 4, 6},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn);
   });
 }
 
@@ -10056,10 +10795,14 @@ TEST_F(LazyOpsTest, TestGeluBackward) {
     return torch::gelu(inputs[0]);
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::rand({2, 3}, torch::TensorOptions(torch::kFloat)
-                                          .device(DefaultDevice())
-                                          .requires_grad(true))},
-                 device, testfn);
+    TestBackward(
+        {torch::rand(
+            {2, 3},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn);
   });
   ExpectCounterChanged("lazy::gelu_backward", GetIgnoredCounters());
 }
@@ -10070,10 +10813,14 @@ TEST_F(LazyOpsTest, TestLeakyReluBackward) {
     return torch::leaky_relu(inputs[0], negative_slope);
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::rand({2, 1, 4, 6}, torch::TensorOptions(torch::kFloat)
-                                                .device(DefaultDevice())
-                                                .requires_grad(true))},
-                 device, testfn);
+    TestBackward(
+        {torch::rand(
+            {2, 1, 4, 6},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn);
   });
 }
 
@@ -10082,10 +10829,14 @@ TEST_F(LazyOpsTest, TestTransposeBackward) {
     return torch::t(inputs[0]);
   };
   ForEachDevice([&](const torch::Device& device) {
-    TestBackward({torch::rand({2, 3}, torch::TensorOptions(torch::kFloat)
-                                          .device(DefaultDevice())
-                                          .requires_grad(true))},
-                 device, testfn);
+    TestBackward(
+        {torch::rand(
+            {2, 3},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn);
   });
 }
 
@@ -10100,18 +10851,24 @@ TEST_F(LazyOpsTest, TestAddMatMulBackward) {
       return torch::addmm(inputs[0], inputs[1], inputs[2], /*beta=*/beta);
     };
     ForEachDevice([&](const torch::Device& device) {
-      TestBackward({torch::rand({labels}, torch::TensorOptions(torch::kFloat)
-                                              .device(DefaultDevice())
-                                              .requires_grad(true)),
-                    torch::rand({in_channels, out_channels},
-                                torch::TensorOptions(torch::kFloat)
-                                    .device(DefaultDevice())
-                                    .requires_grad(true)),
-                    torch::rand({out_channels, labels},
-                                torch::TensorOptions(torch::kFloat)
-                                    .device(DefaultDevice())
-                                    .requires_grad(true))},
-                   device, testfn);
+      TestBackward(
+          {torch::rand(
+               {labels},
+               torch::TensorOptions(torch::kFloat)
+                   .device(DefaultDevice())
+                   .requires_grad(true)),
+           torch::rand(
+               {in_channels, out_channels},
+               torch::TensorOptions(torch::kFloat)
+                   .device(DefaultDevice())
+                   .requires_grad(true)),
+           torch::rand(
+               {out_channels, labels},
+               torch::TensorOptions(torch::kFloat)
+                   .device(DefaultDevice())
+                   .requires_grad(true))},
+          device,
+          testfn);
     });
   }
 }
@@ -10131,18 +10888,24 @@ TEST_F(LazyOpsTest, TestBinaryCrossEntropyBackward) {
         weight = torch::rand({batch, classes}, torch::TensorOptions(dtype));
       }
       for (torch::Reduction::Reduction reduction :
-           {torch::Reduction::Mean, torch::Reduction::Sum,
+           {torch::Reduction::Mean,
+            torch::Reduction::Sum,
             torch::Reduction::None}) {
         auto testfn =
             [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
           return torch::binary_cross_entropy(
-              /*self=*/inputs[0], /*target=*/inputs[1],
+              /*self=*/inputs[0],
+              /*target=*/inputs[1],
               /*weight=*/inputs[2],
               /*reduction=*/reduction);
         };
         ForEachDevice([&](const torch::Device& device) {
-          TestBackward({input, target, weight}, device, testfn, /*rtol=*/1e-4,
-                       /*atol=*/1e-7);
+          TestBackward(
+              {input, target, weight},
+              device,
+              testfn,
+              /*rtol=*/1e-4,
+              /*atol=*/1e-7);
         });
       }
     }
@@ -10150,21 +10913,21 @@ TEST_F(LazyOpsTest, TestBinaryCrossEntropyBackward) {
 }
 
 TEST_F(LazyOpsTest, TestNllLossBackward) {
-  // TODO(whc) debug divide-by-zero failure under ASAN
-  GTEST_SKIP();
-
   int batch = 6;
   int classes = 2;
   // TODO(asuhan): Fix the torch::kDouble case.
   for (auto dtype : {torch::kFloat}) {
     for (int ignore_index : {-1, 0, 1, 5}) {
       for (bool def_weight : {false, true}) {
-        torch::Tensor input =
-            torch::rand({batch, classes}, torch::TensorOptions(dtype)
-                                              .device(DefaultDevice())
-                                              .requires_grad(true));
+        torch::Tensor input = torch::rand(
+            {batch, classes},
+            torch::TensorOptions(dtype)
+                .device(DefaultDevice())
+                .requires_grad(true));
         torch::Tensor target = torch::randint(
-            std::min(ignore_index, 0), classes, {batch},
+            std::min(ignore_index, 0),
+            classes,
+            {batch},
             torch::TensorOptions(torch::kLong).device(DefaultDevice()));
         torch::Tensor weight;
         if (def_weight) {
@@ -10172,18 +10935,25 @@ TEST_F(LazyOpsTest, TestNllLossBackward) {
               {classes}, torch::TensorOptions(dtype).device(DefaultDevice()));
         }
         for (torch::Reduction::Reduction reduction :
-             {torch::Reduction::Mean, torch::Reduction::Sum,
+             {torch::Reduction::Mean,
+              torch::Reduction::Sum,
               torch::Reduction::None}) {
           auto testfn =
               [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
             return torch::nll_loss(
-                /*self=*/inputs[0], /*target=*/inputs[1],
+                /*self=*/inputs[0],
+                /*target=*/inputs[1],
                 /*weight=*/inputs[2],
-                /*reduction=*/reduction, /*ignore_index=*/ignore_index);
+                /*reduction=*/reduction,
+                /*ignore_index=*/ignore_index);
           };
           ForEachDevice([&](const torch::Device& device) {
-            TestBackward({input, target, weight}, device, testfn, /*rtol=*/1e-5,
-                         /*atol=*/1e-8);
+            TestBackward(
+                {input, target, weight},
+                device,
+                testfn,
+                /*rtol=*/1e-5,
+                /*atol=*/1e-8);
           });
         }
       }
@@ -10200,12 +10970,15 @@ TEST_F(LazyOpsTest, TestNllLoss2dBackward) {
   for (auto dtype : {torch::kFloat}) {
     for (int ignore_index : {-1, 0, 1, 5}) {
       for (bool def_weight : {false, true}) {
-        torch::Tensor input = torch::rand({batch, classes, height, width},
-                                          torch::TensorOptions(dtype)
-                                              .device(DefaultDevice())
-                                              .requires_grad(true));
+        torch::Tensor input = torch::rand(
+            {batch, classes, height, width},
+            torch::TensorOptions(dtype)
+                .device(DefaultDevice())
+                .requires_grad(true));
         torch::Tensor target = torch::randint(
-            std::min(ignore_index, 0), classes, {batch, height, width},
+            std::min(ignore_index, 0),
+            classes,
+            {batch, height, width},
             torch::TensorOptions(torch::kLong).device(DefaultDevice()));
         torch::Tensor weight;
         if (def_weight) {
@@ -10213,18 +10986,25 @@ TEST_F(LazyOpsTest, TestNllLoss2dBackward) {
               {classes}, torch::TensorOptions(dtype).device(DefaultDevice()));
         }
         for (torch::Reduction::Reduction reduction :
-             {torch::Reduction::Mean, torch::Reduction::Sum,
+             {torch::Reduction::Mean,
+              torch::Reduction::Sum,
               torch::Reduction::None}) {
           auto testfn =
               [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
             return torch::nll_loss2d(
-                /*self=*/inputs[0], /*target=*/inputs[1],
+                /*self=*/inputs[0],
+                /*target=*/inputs[1],
                 /*weight=*/inputs[2],
-                /*reduction=*/reduction, /*ignore_index=*/ignore_index);
+                /*reduction=*/reduction,
+                /*ignore_index=*/ignore_index);
           };
           ForEachDevice([&](const torch::Device& device) {
-            TestBackward({input, target, weight}, device, testfn, /*rtol=*/1e-5,
-                         /*atol=*/1e-8);
+            TestBackward(
+                {input, target, weight},
+                device,
+                testfn,
+                /*rtol=*/1e-5,
+                /*atol=*/1e-8);
           });
         }
       }
@@ -10233,23 +11013,33 @@ TEST_F(LazyOpsTest, TestNllLoss2dBackward) {
 }
 
 TEST_F(LazyOpsTest, TestSmoothL1LossBackward) {
-  torch::Tensor input = torch::randn({2, 4}, torch::TensorOptions(torch::kFloat)
-                                                 .device(DefaultDevice())
-                                                 .requires_grad(true));
+  torch::Tensor input = torch::randn(
+      {2, 4},
+      torch::TensorOptions(torch::kFloat)
+          .device(DefaultDevice())
+          .requires_grad(true));
   torch::Tensor target = torch::randn(
       {2, 4}, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
   for (torch::Reduction::Reduction reduction :
-       {torch::Reduction::None, torch::Reduction::Mean,
+       {torch::Reduction::None,
+        torch::Reduction::Mean,
         torch::Reduction::Sum}) {
     for (double beta : {0.25, 1.}) {
       auto testfn =
           [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
-        return torch::smooth_l1_loss(/*input=*/inputs[0], /*target=*/inputs[1],
-                                     /*reduction=*/reduction, /*beta=*/beta);
+        return torch::smooth_l1_loss(
+            /*input=*/inputs[0],
+            /*target=*/inputs[1],
+            /*reduction=*/reduction,
+            /*beta=*/beta);
       };
       ForEachDevice([&](const torch::Device& device) {
-        TestBackward({input, target}, device, testfn, /*rtol=*/1e-5,
-                     /*atol=*/1e-8);
+        TestBackward(
+            {input, target},
+            device,
+            testfn,
+            /*rtol=*/1e-5,
+            /*atol=*/1e-8);
       });
     }
   }
@@ -10261,10 +11051,13 @@ TEST_F(LazyOpsTest, TestViewBackward) {
   };
   ForEachDevice([&](const torch::Device& device) {
     TestBackward(
-        {torch::rand({32, 20, 4, 4}, torch::TensorOptions(torch::kFloat)
-                                         .device(DefaultDevice())
-                                         .requires_grad(true))},
-        device, testfn);
+        {torch::rand(
+            {32, 20, 4, 4},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true))},
+        device,
+        testfn);
   });
 }
 
@@ -10273,40 +11066,51 @@ TEST_F(LazyOpsTest, TestBatchNorm2DBackward) {
   double eps = 0.5;
   auto testfn = [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
     return torch::batch_norm(
-        /*input=*/inputs[0], /*weight=*/inputs[1], /*bias=*/inputs[2],
-        /*running_mean=*/inputs[3], /*running_var=*/inputs[4],
-        /*training=*/true, /*momentum=*/momentum, /*eps=*/eps,
+        /*input=*/inputs[0],
+        /*weight=*/inputs[1],
+        /*bias=*/inputs[2],
+        /*running_mean=*/inputs[3],
+        /*running_var=*/inputs[4],
+        /*training=*/true,
+        /*momentum=*/momentum,
+        /*eps=*/eps,
         /*cudnn_enabled=*/false);
   };
   int num_features = 3;
   torch::Tensor undef;
   for (bool undef_weight_bias : {false, true}) {
     ForEachDevice([&](const torch::Device& device) {
-      torch::Tensor input = torch::rand({2, num_features, 4, 4},
-                                        torch::TensorOptions(torch::kFloat)
-                                            .device(DefaultDevice())
-                                            .requires_grad(true));
-      torch::Tensor weight =
-          undef_weight_bias
-              ? undef
-              : torch::rand({num_features}, torch::TensorOptions(torch::kFloat)
-                                                .device(DefaultDevice())
-                                                .requires_grad(true));
-      torch::Tensor bias =
-          undef_weight_bias
-              ? undef
-              : torch::rand({num_features}, torch::TensorOptions(torch::kFloat)
-                                                .device(DefaultDevice())
-                                                .requires_grad(true));
+      torch::Tensor input = torch::rand(
+          {2, num_features, 4, 4},
+          torch::TensorOptions(torch::kFloat)
+              .device(DefaultDevice())
+              .requires_grad(true));
+      torch::Tensor weight = undef_weight_bias
+          ? undef
+          : torch::rand(
+                {num_features},
+                torch::TensorOptions(torch::kFloat)
+                    .device(DefaultDevice())
+                    .requires_grad(true));
+      torch::Tensor bias = undef_weight_bias
+          ? undef
+          : torch::rand(
+                {num_features},
+                torch::TensorOptions(torch::kFloat)
+                    .device(DefaultDevice())
+                    .requires_grad(true));
       torch::Tensor running_mean = torch::zeros(
           {num_features},
           torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
       torch::Tensor running_var = torch::ones(
           {num_features},
           torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-      TestBackward({input, weight, bias, running_mean, running_var}, device,
-                   testfn,
-                   /*rtol=*/1e-3, /*atol=*/1e-4);
+      TestBackward(
+          {input, weight, bias, running_mean, running_var},
+          device,
+          testfn,
+          /*rtol=*/1e-3,
+          /*atol=*/1e-4);
     });
   }
 }
@@ -10316,40 +11120,51 @@ TEST_F(LazyOpsTest, TestBatchNorm3DBackward) {
   double eps = 0.5;
   auto testfn = [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
     return torch::batch_norm(
-        /*input=*/inputs[0], /*weight=*/inputs[1], /*bias=*/inputs[2],
-        /*running_mean=*/inputs[3], /*running_var=*/inputs[4],
-        /*training=*/true, /*momentum=*/momentum, /*eps=*/eps,
+        /*input=*/inputs[0],
+        /*weight=*/inputs[1],
+        /*bias=*/inputs[2],
+        /*running_mean=*/inputs[3],
+        /*running_var=*/inputs[4],
+        /*training=*/true,
+        /*momentum=*/momentum,
+        /*eps=*/eps,
         /*cudnn_enabled=*/false);
   };
   int num_features = 3;
   torch::Tensor undef;
   for (bool undef_weight_bias : {false, true}) {
     ForEachDevice([&](const torch::Device& device) {
-      torch::Tensor input = torch::rand({2, num_features, 4, 4, 2},
-                                        torch::TensorOptions(torch::kFloat)
-                                            .device(DefaultDevice())
-                                            .requires_grad(true));
-      torch::Tensor weight =
-          undef_weight_bias
-              ? undef
-              : torch::rand({num_features}, torch::TensorOptions(torch::kFloat)
-                                                .device(DefaultDevice())
-                                                .requires_grad(true));
-      torch::Tensor bias =
-          undef_weight_bias
-              ? undef
-              : torch::rand({num_features}, torch::TensorOptions(torch::kFloat)
-                                                .device(DefaultDevice())
-                                                .requires_grad(true));
+      torch::Tensor input = torch::rand(
+          {2, num_features, 4, 4, 2},
+          torch::TensorOptions(torch::kFloat)
+              .device(DefaultDevice())
+              .requires_grad(true));
+      torch::Tensor weight = undef_weight_bias
+          ? undef
+          : torch::rand(
+                {num_features},
+                torch::TensorOptions(torch::kFloat)
+                    .device(DefaultDevice())
+                    .requires_grad(true));
+      torch::Tensor bias = undef_weight_bias
+          ? undef
+          : torch::rand(
+                {num_features},
+                torch::TensorOptions(torch::kFloat)
+                    .device(DefaultDevice())
+                    .requires_grad(true));
       torch::Tensor running_mean = torch::zeros(
           {num_features},
           torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
       torch::Tensor running_var = torch::ones(
           {num_features},
           torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
-      TestBackward({input, weight, bias, running_mean, running_var}, device,
-                   testfn,
-                   /*rtol=*/1e-3, /*atol=*/1e-3);
+      TestBackward(
+          {input, weight, bias, running_mean, running_var},
+          device,
+          testfn,
+          /*rtol=*/1e-3,
+          /*atol=*/1e-3);
     });
   }
 }
@@ -10359,38 +11174,47 @@ TEST_F(LazyOpsTest, TestBCEWithLogitsBackward) {
   int classes = 5;
   torch::Tensor undef;
   for (torch::Reduction::Reduction reduction :
-       {torch::Reduction::None, torch::Reduction::Mean,
+       {torch::Reduction::None,
+        torch::Reduction::Mean,
         torch::Reduction::Sum}) {
     auto testfn =
         [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
       return torch::binary_cross_entropy_with_logits(
-          /*input=*/inputs[0], /*target=*/inputs[1], /*weight=*/inputs[2],
+          /*input=*/inputs[0],
+          /*target=*/inputs[1],
+          /*weight=*/inputs[2],
           /*pos_weight=*/inputs[3],
           /*reduction=*/reduction);
     };
     for (bool undef_weight : {false, true}) {
       for (bool undef_pos_weight : {false, true}) {
-        torch::Tensor input =
-            torch::rand({batch, classes}, torch::TensorOptions(torch::kFloat)
-                                              .device(DefaultDevice())
-                                              .requires_grad(true));
-        torch::Tensor target =
-            torch::rand({batch, classes}, torch::TensorOptions(torch::kFloat)
-                                              .device(DefaultDevice())
-                                              .requires_grad(true));
-        torch::Tensor weight =
-            undef_weight
-                ? undef
-                : torch::rand({classes}, torch::TensorOptions(torch::kFloat)
-                                             .device(DefaultDevice()));
-        torch::Tensor pos_weight =
-            undef_pos_weight
-                ? undef
-                : torch::rand({classes}, torch::TensorOptions(torch::kFloat)
-                                             .device(DefaultDevice()));
+        torch::Tensor input = torch::rand(
+            {batch, classes},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true));
+        torch::Tensor target = torch::rand(
+            {batch, classes},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true));
+        torch::Tensor weight = undef_weight
+            ? undef
+            : torch::rand(
+                  {classes},
+                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+        torch::Tensor pos_weight = undef_pos_weight
+            ? undef
+            : torch::rand(
+                  {classes},
+                  torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
         ForEachDevice([&](const torch::Device& device) {
-          TestBackward({input, target, weight, pos_weight}, device, testfn,
-                       /*rtol=*/1e-3, /*atol=*/1e-5);
+          TestBackward(
+              {input, target, weight, pos_weight},
+              device,
+              testfn,
+              /*rtol=*/1e-3,
+              /*atol=*/1e-5);
         });
       }
     }
@@ -10398,22 +11222,31 @@ TEST_F(LazyOpsTest, TestBCEWithLogitsBackward) {
 }
 
 TEST_F(LazyOpsTest, TestKlDivBackward) {
-  torch::Tensor input = torch::rand({4, 3}, torch::TensorOptions(torch::kFloat)
-                                                .device(DefaultDevice())
-                                                .requires_grad(true));
-  torch::Tensor target = torch::rand({4, 3}, torch::TensorOptions(torch::kFloat)
-                                                 .device(DefaultDevice())
-                                                 .requires_grad(true));
+  torch::Tensor input = torch::rand(
+      {4, 3},
+      torch::TensorOptions(torch::kFloat)
+          .device(DefaultDevice())
+          .requires_grad(true));
+  torch::Tensor target = torch::rand(
+      {4, 3},
+      torch::TensorOptions(torch::kFloat)
+          .device(DefaultDevice())
+          .requires_grad(true));
   for (torch::Reduction::Reduction reduction :
-       {torch::Reduction::Mean, torch::Reduction::Sum,
+       {torch::Reduction::Mean,
+        torch::Reduction::Sum,
         torch::Reduction::None}) {
     auto testfn =
         [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
       return torch::kl_div(/*self=*/inputs[0], /*target=*/inputs[1], reduction);
     };
     ForEachDevice([&](const torch::Device& device) {
-      TestBackward({input, target}, device, testfn, /*rtol=*/1e-4,
-                   /*atol=*/1e-5);
+      TestBackward(
+          {input, target},
+          device,
+          testfn,
+          /*rtol=*/1e-4,
+          /*atol=*/1e-5);
     });
   }
 }
@@ -10424,21 +11257,29 @@ TEST_F(LazyOpsTest, TestEmbeddingBackward) {
     for (bool scale_grad_by_freq : {false, true}) {
       auto testfn =
           [&](const std::vector<torch::Tensor>& inputs) -> torch::Tensor {
-        return torch::embedding(inputs[0], inputs[1],
-                                /*padding_idx=*/padding_idx,
-                                /*scale_grad_by_freq=*/scale_grad_by_freq,
-                                /*sparse=*/false);
+        return torch::embedding(
+            inputs[0],
+            inputs[1],
+            /*padding_idx=*/padding_idx,
+            /*scale_grad_by_freq=*/scale_grad_by_freq,
+            /*sparse=*/false);
       };
       ForEachDevice([&](const torch::Device& device) {
-        torch::Tensor weight =
-            torch::rand({num_weights, 7}, torch::TensorOptions(torch::kFloat)
-                                              .device(DefaultDevice())
-                                              .requires_grad(true));
+        torch::Tensor weight = torch::rand(
+            {num_weights, 7},
+            torch::TensorOptions(torch::kFloat)
+                .device(DefaultDevice())
+                .requires_grad(true));
         torch::Tensor indices = torch::randint(
-            num_weights, {3, 9, 4},
+            num_weights,
+            {3, 9, 4},
             torch::TensorOptions(torch::kLong).device(DefaultDevice()));
-        TestBackward({weight, indices}, device, testfn, /*rtol=*/1e-5,
-                     /*atol=*/1e-8);
+        TestBackward(
+            {weight, indices},
+            device,
+            testfn,
+            /*rtol=*/1e-5,
+            /*atol=*/1e-8);
       });
     }
   }
@@ -10472,14 +11313,14 @@ TEST_F(LazyOpsTest, TestAmpForeachNonFiniteCheckAndUnscale) {
     torch::Tensor lazy_grads0 = CopyToDevice(grads0, device);
     torch::Tensor lazy_inv_scale = CopyToDevice(inv_scale, device);
     torch::Tensor lazy_found_inf = CopyToDevice(found_inf, device);
-    torch::_amp_foreach_non_finite_check_and_unscale_(lazy_grads0, lazy_found_inf,
-                                                      lazy_inv_scale);
+    torch::_amp_foreach_non_finite_check_and_unscale_(
+        lazy_grads0, lazy_found_inf, lazy_inv_scale);
     AllClose(grads_output0, lazy_grads0, /*rtol=*/1e-2, /*atol=*/1e-4);
     AllEqual(found_inf_output0, lazy_found_inf);
 
     torch::Tensor lazy_grads1 = CopyToDevice(grads1, device);
-    torch::_amp_foreach_non_finite_check_and_unscale_(lazy_grads1, lazy_found_inf,
-                                                      lazy_inv_scale);
+    torch::_amp_foreach_non_finite_check_and_unscale_(
+        lazy_grads1, lazy_found_inf, lazy_inv_scale);
     AllEqual(found_inf_output1, lazy_found_inf);
   });
 }
@@ -10523,38 +11364,65 @@ TEST_F(LazyOpsTest, TestAmpUpdateScale) {
     torch::Tensor lazy_found_inf = CopyToDevice(found_inf, device);
     torch::Tensor lazy_not_found_inf = CopyToDevice(not_found_inf, device);
 
-    torch::_amp_update_scale_(lazy_current_scale, lazy_growth_tracker,
-                              lazy_not_found_inf, scale_growth_factor,
-                              scale_backoff_factor, growth_interval);
-    AllClose(current_scale_result0, lazy_current_scale, /*rtol=*/1e-2,
-             /*atol=*/1e-4);
+    torch::_amp_update_scale_(
+        lazy_current_scale,
+        lazy_growth_tracker,
+        lazy_not_found_inf,
+        scale_growth_factor,
+        scale_backoff_factor,
+        growth_interval);
+    AllClose(
+        current_scale_result0,
+        lazy_current_scale,
+        /*rtol=*/1e-2,
+        /*atol=*/1e-4);
     AllEqual(growth_tracker_result0, lazy_growth_tracker);
 
-    torch::_amp_update_scale_(lazy_current_scale, lazy_growth_tracker,
-                              lazy_not_found_inf, scale_growth_factor,
-                              scale_backoff_factor, growth_interval);
-    AllClose(current_scale_result1, lazy_current_scale, /*rtol=*/1e-2,
-             /*atol=*/1e-4);
+    torch::_amp_update_scale_(
+        lazy_current_scale,
+        lazy_growth_tracker,
+        lazy_not_found_inf,
+        scale_growth_factor,
+        scale_backoff_factor,
+        growth_interval);
+    AllClose(
+        current_scale_result1,
+        lazy_current_scale,
+        /*rtol=*/1e-2,
+        /*atol=*/1e-4);
     AllEqual(growth_tracker_result1, lazy_growth_tracker);
 
     // torch::_amp_update_scale_ returns the reference of current_scale
     lazy_current_scale = torch::_amp_update_scale_(
-        lazy_current_scale, lazy_growth_tracker, lazy_not_found_inf,
-        scale_growth_factor, scale_backoff_factor, growth_interval);
-    AllClose(current_scale_result2, lazy_current_scale, /*rtol=*/1e-2,
-             /*atol=*/1e-4);
+        lazy_current_scale,
+        lazy_growth_tracker,
+        lazy_not_found_inf,
+        scale_growth_factor,
+        scale_backoff_factor,
+        growth_interval);
+    AllClose(
+        current_scale_result2,
+        lazy_current_scale,
+        /*rtol=*/1e-2,
+        /*atol=*/1e-4);
     AllEqual(growth_tracker_result2, lazy_growth_tracker);
 
     lazy_current_scale = torch::_amp_update_scale_(
-        lazy_current_scale, lazy_growth_tracker, lazy_found_inf,
-        scale_growth_factor, scale_backoff_factor, growth_interval);
-    AllClose(current_scale_result3, lazy_current_scale, /*rtol=*/1e-2,
-             /*atol=*/1e-4);
+        lazy_current_scale,
+        lazy_growth_tracker,
+        lazy_found_inf,
+        scale_growth_factor,
+        scale_backoff_factor,
+        growth_interval);
+    AllClose(
+        current_scale_result3,
+        lazy_current_scale,
+        /*rtol=*/1e-2,
+        /*atol=*/1e-4);
     AllEqual(growth_tracker_result3, lazy_growth_tracker);
   });
   ExpectCounterNotChanged("aten::.*", GetIgnoredCounters());
-  ExpectCounterChanged("lazy::_amp_update_scale_",
-                       GetIgnoredCounters());
+  ExpectCounterChanged("lazy::_amp_update_scale_", GetIgnoredCounters());
 }
 
 TEST_F(LazyOpsTest, TestEarlySyncLiveTensors) {
@@ -10567,14 +11435,11 @@ TEST_F(LazyOpsTest, TestEarlySyncLiveTensors) {
     ASSERT_EQ(scalar1.to<float>(), scalar2.to<float>());
   });
   if (DebugUtil::ExperimentEnabled("early_sync")) {
-    ExpectCounterChanged("EarlySyncLiveTensorsCount",
-                         GetIgnoredCounters());
+    ExpectCounterChanged("EarlySyncLiveTensorsCount", GetIgnoredCounters());
   } else {
-    ExpectCounterNotChanged("EarlySyncLiveTensorsCount",
-                            GetIgnoredCounters());
+    ExpectCounterNotChanged("EarlySyncLiveTensorsCount", GetIgnoredCounters());
   }
-  ExpectCounterChanged("aten::_local_scalar_dense",
-                       GetIgnoredCounters());
+  ExpectCounterChanged("aten::_local_scalar_dense", GetIgnoredCounters());
 }
 
 TEST_F(LazyOpsTest, TestLerp) {
@@ -10694,7 +11559,29 @@ TEST_F(LazyOpsTest, TestLerpScalarOut) {
   ExpectCounterChanged("lazy::lerp", GetIgnoredCounters());
 }
 
+TEST_F(LazyOpsTest, IsAliasOf) {
+  auto a = torch::empty(
+      4, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+  auto b = torch::empty(
+      4, torch::TensorOptions(torch::kFloat).device(DefaultDevice()));
+
+  ForEachDevice([&](const torch::Device& device) {
+    auto lazy_a = CopyToDevice(a, device);
+    auto lazy_b = CopyToDevice(b, device);
+    EXPECT_EQ(!a.is_alias_of(b), !lazy_a.is_alias_of(lazy_b));
+
+    auto c = a.view({2, 2});
+    auto lazy_c = lazy_a.view({2, 2});
+    EXPECT_EQ(a.is_alias_of(c), lazy_a.is_alias_of(lazy_c));
+
+    auto d = c.view({1, 4});
+    auto lazy_d = lazy_c.view({1, 4});
+    EXPECT_EQ(d.is_alias_of(c), lazy_d.is_alias_of(lazy_c));
+    EXPECT_EQ(d.is_alias_of(a), lazy_d.is_alias_of(lazy_a));
+  });
+}
+
 #endif // FBCODE_CAFFE2
 
-}  // namespace lazy
-}  // namespace torch
+} // namespace lazy
+} // namespace torch

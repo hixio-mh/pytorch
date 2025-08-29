@@ -3,220 +3,260 @@ name: trunk
 on:
   push:
     branches:
-      - master
       - main
       - release/*
+      - landchecks/*
     tags:
       - ciflow/trunk/*
-      - ciflow/all/*
   workflow_dispatch:
+  schedule:
+    - cron: 29 8 * * *  # about 1:29am PDT
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref_name }}-${{ github.ref_type == 'branch' && github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
   cancel-in-progress: true
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
-  parallelnative-linux-xenial-py3_7-gcc5_4-build:
-    name: parallelnative-linux-xenial-py3.7-gcc5.4
-    uses: pytorch/pytorch/.github/workflows/_linux-build.yml@master
-    with:
-      build-environment: parallelnative-linux-xenial-py3.7-gcc5.4
-      docker-image-name: pytorch-linux-xenial-py3.7-gcc5.4
+  llm-td:
+    if: github.repository_owner == 'pytorch'
+    name: before-test
+    uses: ./.github/workflows/llm_td_retrieval.yml
+    permissions:
+      id-token: write
+      contents: read
 
-  parallelnative-linux-xenial-py3_7-gcc5_4-test:
-    name: parallelnative-linux-xenial-py3.7-gcc5.4
-    uses: pytorch/pytorch/.github/workflows/_linux-test.yml@master
-    needs: parallelnative-linux-xenial-py3_7-gcc5_4-build
+  target-determination:
+    name: before-test
+    uses: ./.github/workflows/target_determination.yml
+    needs: llm-td
+    permissions:
+      id-token: write
+      contents: read
+
+  get-label-type:
+    name: get-label-type
+    uses: pytorch/pytorch/.github/workflows/_runner-determinator.yml@main
+    if: ${{ (github.event_name != 'schedule' || github.repository == 'pytorch/pytorch') && github.repository_owner == 'pytorch' }}
     with:
-      build-environment: parallelnative-linux-xenial-py3.7-gcc5.4
-      docker-image: ${{ needs.parallelnative-linux-xenial-py3_7-gcc5_4-build.outputs.docker-image }}
+      triggering_actor: ${{ github.triggering_actor }}
+      issue_owner: ${{ github.event.pull_request.user.login || github.event.issue.user.login }}
+      curr_branch: ${{ github.head_ref || github.ref_name }}
+      curr_ref_type: ${{ github.ref_type }}
+
+  libtorch-linux-jammy-cuda12_8-py3_10-gcc11-debug-build:
+    name: libtorch-linux-jammy-cuda12.8-py3.10-gcc11-debug
+    uses: ./.github/workflows/_linux-build.yml
+    needs: get-label-type
+    with:
+      build-environment: libtorch-linux-jammy-cuda12.8-py3.10-gcc11
+      docker-image-name: ci-image:pytorch-linux-jammy-cuda12.8-cudnn9-py3-gcc11
+      build-generates-artifacts: false
+      runner_prefix: "${{ needs.get-label-type.outputs.label-type }}"
+      runner: "linux.4xlarge"
       test-matrix: |
         { include: [
-          { config: "default", shard: 1, num_shards: 2, runner: "linux.2xlarge" },
-          { config: "default", shard: 2, num_shards: 2, runner: "linux.2xlarge" },
+          { config: "default", shard: 1, num_shards: 1 },
         ]}
+    secrets: inherit
 
-  # Build PyTorch with BUILD_CAFFE2=ON
-  caffe2-linux-xenial-py3_7-gcc5_4-build:
-    name: caffe2-linux-xenial-py3.7-gcc5.4
-    uses: pytorch/pytorch/.github/workflows/_linux-build.yml@master
+  linux-jammy-cuda12_8-py3_10-gcc11-build:
+    name: linux-jammy-cuda12.8-py3.10-gcc11
+    uses: ./.github/workflows/_linux-build.yml
+    needs: get-label-type
     with:
-      build-environment: caffe2-linux-xenial-py3.7-gcc5.4
-      docker-image-name: pytorch-linux-xenial-py3.7-gcc5.4
-
-  linux-bionic-cuda10_2-py3_9-gcc7-build:
-    name: linux-bionic-cuda10.2-py3.9-gcc7
-    uses: pytorch/pytorch/.github/workflows/_linux-build.yml@master
-    with:
-      build-environment: linux-bionic-cuda10.2-py3.9-gcc7
-      docker-image-name: pytorch-linux-bionic-cuda10.2-cudnn7-py3.9-gcc7
-
-  linux-bionic-cuda10_2-py3_9-gcc7-test:
-    name: linux-bionic-cuda10.2-py3.9-gcc7
-    uses: pytorch/pytorch/.github/workflows/_linux-test.yml@master
-    needs: linux-bionic-cuda10_2-py3_9-gcc7-build
-    with:
-      build-environment: linux-bionic-cuda10.2-py3.9-gcc7
-      docker-image: ${{ needs.linux-bionic-cuda10_2-py3_9-gcc7-build.outputs.docker-image }}
+      runner_prefix: "${{ needs.get-label-type.outputs.label-type }}"
+      build-environment: linux-jammy-cuda12.8-py3.10-gcc11
+      docker-image-name: ci-image:pytorch-linux-jammy-cuda12.8-cudnn9-py3-gcc11
+      cuda-arch-list: '7.5 8.9'
       test-matrix: |
         { include: [
-          { config: "default", shard: 1, num_shards: 2, runner: "linux.4xlarge.nvidia.gpu" },
-          { config: "default", shard: 2, num_shards: 2, runner: "linux.4xlarge.nvidia.gpu" },
-          { config: "slow", shard: 1, num_shards: 1, runner: "linux.4xlarge.nvidia.gpu" },
-          { config: "nogpu_NO_AVX", shard: 1, num_shards: 1, runner: "linux.2xlarge" },
-          { config: "nogpu_NO_AVX2", shard: 1, num_shards: 1, runner: "linux.2xlarge" },
-          { config: "jit_legacy", shard: 1, num_shards: 1, runner: "linux.4xlarge.nvidia.gpu" },
-          { config: "distributed", shard: 1, num_shards: 1, runner: "linux.8xlarge.nvidia.gpu" },
-          { config: "multigpu", shard: 1, num_shards: 1, runner: "linux.16xlarge.nvidia.gpu" },
+          { config: "default", shard: 1, num_shards: 5, runner: "${{ needs.get-label-type.outputs.label-type }}linux.g6.4xlarge.experimental.nvidia.gpu" },
+          { config: "default", shard: 2, num_shards: 5, runner: "${{ needs.get-label-type.outputs.label-type }}linux.g6.4xlarge.experimental.nvidia.gpu" },
+          { config: "default", shard: 3, num_shards: 5, runner: "${{ needs.get-label-type.outputs.label-type }}linux.g6.4xlarge.experimental.nvidia.gpu" },
+          { config: "default", shard: 4, num_shards: 5, runner: "${{ needs.get-label-type.outputs.label-type }}linux.g6.4xlarge.experimental.nvidia.gpu" },
+          { config: "default", shard: 5, num_shards: 5, runner: "${{ needs.get-label-type.outputs.label-type }}linux.g6.4xlarge.experimental.nvidia.gpu" },
+          { config: "distributed", shard: 1, num_shards: 3, runner: "${{ needs.get-label-type.outputs.label-type }}linux.g4dn.12xlarge.nvidia.gpu" },
+          { config: "distributed", shard: 2, num_shards: 3, runner: "${{ needs.get-label-type.outputs.label-type }}linux.g4dn.12xlarge.nvidia.gpu" },
+          { config: "distributed", shard: 3, num_shards: 3, runner: "${{ needs.get-label-type.outputs.label-type }}linux.g4dn.12xlarge.nvidia.gpu" },
+          { config: "pr_time_benchmarks", shard: 1, num_shards: 1, runner: "linux.g4dn.metal.nvidia.gpu" },
         ]}
+    secrets: inherit
 
-  libtorch-linux-xenial-cuda10_2-py3_7-gcc7-build:
-    name: libtorch-linux-xenial-cuda10.2-py3.7-gcc7
-    uses: pytorch/pytorch/.github/workflows/_linux-build.yml@master
+  linux-jammy-cuda12_8-py3_10-gcc11-test:
+    name: linux-jammy-cuda12.8-py3.10-gcc11
+    uses: ./.github/workflows/_linux-test.yml
+    needs:
+      - linux-jammy-cuda12_8-py3_10-gcc11-build
+      - target-determination
     with:
-      build-environment: libtorch-linux-xenial-cuda10.2-py3.7-gcc7
-      docker-image-name: pytorch-linux-xenial-cuda10.2-cudnn7-py3-gcc7
-      build-generates-artifacts: false
+      timeout-minutes: 360
+      build-environment: linux-jammy-cuda12.8-py3.10-gcc11
+      docker-image: ${{ needs.linux-jammy-cuda12_8-py3_10-gcc11-build.outputs.docker-image }}
+      test-matrix: ${{ needs.linux-jammy-cuda12_8-py3_10-gcc11-build.outputs.test-matrix }}
+    secrets: inherit
 
-  libtorch-linux-xenial-cuda11_3-py3_7-gcc7-build:
-    name: libtorch-linux-xenial-cuda11.3-py3.7-gcc7
-    uses: pytorch/pytorch/.github/workflows/_linux-build.yml@master
-    with:
-      build-environment: libtorch-linux-xenial-cuda11.3-py3.7-gcc7
-      docker-image-name: pytorch-linux-xenial-cuda11.3-cudnn8-py3-gcc7
-      build-generates-artifacts: false
 
   # no-ops builds test USE_PER_OPERATOR_HEADERS=0 where ATen/ops is not generated
-  linux-xenial-cuda11_3-py3_7-gcc7-no-ops-build:
-    name: linux-xenial-cuda11.3-py3.7-gcc7-no-ops
-    uses: pytorch/pytorch/.github/workflows/_linux-build.yml@master
+  linux-jammy-cuda12_8-py3_10-gcc11-no-ops-build:
+    name: linux-jammy-cuda12.8-py3.10-gcc11-no-ops
+    uses: ./.github/workflows/_linux-build.yml
+    needs: get-label-type
     with:
-      build-environment: linux-xenial-cuda11.3-py3.7-gcc7-no-ops
-      docker-image-name: pytorch-linux-xenial-cuda11.3-cudnn8-py3-gcc7
-
-  linux-bionic-rocm4_5-py3_7-distributed-build:
-    name: linux-bionic-rocm4.5-py3.7-distributed
-    uses: pytorch/pytorch/.github/workflows/_linux-build.yml@master
-    with:
-      build-environment: linux-bionic-rocm4.5-py3.7
-      docker-image-name: pytorch-linux-bionic-rocm4.5-py3.7
-
-  linux-bionic-rocm4_5-py3_7-distributed-test:
-    name: linux-bionic-rocm4.5-py3.7-distributed
-    uses: pytorch/pytorch/.github/workflows/_rocm-test.yml@master
-    needs: linux-bionic-rocm4_5-py3_7-distributed-build
-    with:
-      build-environment: linux-bionic-rocm4.5-py3.7
-      docker-image: ${{ needs.linux-bionic-rocm4_5-py3_7-distributed-build.outputs.docker-image }}
+      runner_prefix: "${{ needs.get-label-type.outputs.label-type }}"
+      build-environment: linux-jammy-cuda12.8-py3.10-gcc11-no-ops
+      docker-image-name: ci-image:pytorch-linux-jammy-cuda12.8-cudnn9-py3-gcc11
       test-matrix: |
         { include: [
-          { config: "distributed", shard: 1, num_shards: 1, runner: "linux.rocm.gpu" },
+          { config: "default", shard: 1, num_shards: 1 },
         ]}
+    secrets: inherit
 
-  pytorch-linux-xenial-py3-clang5-android-ndk-r19c-build:
-    name: pytorch-linux-xenial-py3-clang5-android-ndk-r19c-build
-    uses: pytorch/pytorch/.github/workflows/_android-full-build-test.yml@master
+  macos-py3-arm64-build:
+    if: github.repository_owner == 'pytorch'
+    name: macos-py3-arm64
+    uses: ./.github/workflows/_mac-build.yml
     with:
-      build-environment: pytorch-linux-xenial-py3-clang5-android-ndk-r19c-build
-      docker-image-name: pytorch-linux-xenial-py3-clang5-android-ndk-r19c
-    secrets:
-      SONATYPE_NEXUS_USERNAME: ${{ secrets.SONATYPE_NEXUS_USERNAME }}
-      SONATYPE_NEXUS_PASSWORD: ${{ secrets.SONATYPE_NEXUS_PASSWORD }}
-      ANDROID_SIGN_KEY: ${{ secrets.ANDROID_SIGN_KEY }}
-      ANDROID_SIGN_PASS: ${{ secrets.ANDROID_SIGN_PASS }}
-      SCRIBE_GRAPHQL_ACCESS_TOKEN: ${{ secrets.SCRIBE_GRAPHQL_ACCESS_TOKEN }}
-
-  linux-bionic-py3_7-clang9-slow-build:
-    name: linux-bionic-py3.7-clang9-slow
-    uses: pytorch/pytorch/.github/workflows/_linux-build.yml@master
-    with:
-      build-environment: linux-bionic-py3.7-clang9-slow
-      docker-image-name: pytorch-linux-bionic-py3.7-clang9
-
-  linux-bionic-py3_7-clang9-slow-test:
-    name: linux-bionic-py3.7-clang9-slow
-    uses: pytorch/pytorch/.github/workflows/_linux-test.yml@master
-    needs: linux-bionic-py3_7-clang9-slow-build
-    with:
-      build-environment: linux-bionic-py3.7-clang9-slow
-      docker-image: ${{ needs.linux-bionic-py3_7-clang9-slow-build.outputs.docker-image }}
-      test-matrix: |
-        { include: [
-          { config: "slow", shard: 1, num_shards: 1, runner: "linux.2xlarge" },
-        ]}
-
-  ios-12-5-1-x86-64:
-    name: ios-12-5-1-x86-64
-    uses: pytorch/pytorch/.github/workflows/_ios-build-test.yml@master
-    with:
-      build-environment: ios-12-5-1-x86-64
-      ios-platform: SIMULATOR
-      ios-arch: x86_64
-    secrets:
-      IOS_CERT_KEY_2022: ${{ secrets.IOS_CERT_KEY_2022 }}
-      IOS_CERT_SECRET: ${{ secrets.IOS_CERT_SECRET}}
-      IOS_DEV_TEAM_ID: ${{ secrets.IOS_DEV_TEAM_ID}}
-      IOS_SIGN_KEY_2022: ${{ secrets.IOS_SIGN_KEY_2022 }}
-
-  ios-12-5-1-x86-64-coreml:
-    name: ios-12-5-1-x86-64-coreml
-    uses: pytorch/pytorch/.github/workflows/_ios-build-test.yml@master
-    with:
-      build-environment: ios-12-5-1-x86-64-coreml
-      ios-platform: SIMULATOR
-      ios-arch: x86_64
-    secrets:
-      IOS_CERT_KEY_2022: ${{ secrets.IOS_CERT_KEY_2022 }}
-      IOS_CERT_SECRET: ${{ secrets.IOS_CERT_SECRET}}
-      IOS_DEV_TEAM_ID: ${{ secrets.IOS_DEV_TEAM_ID}}
-      IOS_SIGN_KEY_2022: ${{ secrets.IOS_SIGN_KEY_2022 }}
-
-  macos-11-py3-x86-64-build:
-    name: macos-11-py3-x86-64
-    uses: pytorch/pytorch/.github/workflows/_mac-build.yml@master
-    with:
-      build-environment: macos-11-py3-x86-64
-      xcode-version: "12.4"
-      runner-type: macos-11
+      sync-tag: macos-py3-arm64-build
+      build-environment: macos-py3-arm64
+      runner-type: macos-m1-stable
       build-generates-artifacts: true
-    secrets:
-      MACOS_SCCACHE_S3_ACCESS_KEY_ID: ${{ secrets.MACOS_SCCACHE_S3_ACCESS_KEY_ID }}
-      MACOS_SCCACHE_S3_SECRET_ACCESS_KEY: ${{ secrets.MACOS_SCCACHE_S3_SECRET_ACCESS_KEY }}
-
-  macos-11-py3-x86-64-test:
-    name: macos-11-py3-x86-64
-    uses: pytorch/pytorch/.github/workflows/_mac-test.yml@master
-    needs: macos-11-py3-x86-64-build
-    with:
-      build-environment: macos-11-py3-x86-64
+      # To match the one pre-installed in the m1 runners
+      python-version: 3.12.7
       test-matrix: |
         { include: [
-          { config: "default", shard: 1, num_shards: 2, runner: "macos-11" },
-          { config: "default", shard: 2, num_shards: 2, runner: "macos-11" },
+          { config: "default", shard: 1, num_shards: 3, runner: "macos-m1-stable" },
+          { config: "default", shard: 2, num_shards: 3, runner: "macos-m1-stable" },
+          { config: "default", shard: 3, num_shards: 3, runner: "macos-m1-stable" },
+          { config: "mps", shard: 1, num_shards: 1, runner: "macos-m1-14" },
+          { config: "mps", shard: 1, num_shards: 1, runner: "macos-m2-15" },
         ]}
-    secrets:
-      AWS_OSSCI_METRICS_V2_ACCESS_KEY_ID: ${{ secrets.AWS_OSSCI_METRICS_V2_ACCESS_KEY_ID }}
-      AWS_OSSCI_METRICS_V2_SECRET_ACCESS_KEY: ${{ secrets.AWS_OSSCI_METRICS_V2_SECRET_ACCESS_KEY }}
+    secrets: inherit
 
-  macos-10-15-py3-lite-interpreter-x86-64:
-    name: macos-10-15-py3-lite-interpreter-x86-64
-    uses: pytorch/pytorch/.github/workflows/_mac-build.yml@master
+  macos-py3-arm64-test:
+    name: macos-py3-arm64
+    uses: ./.github/workflows/_mac-test.yml
+    needs:
+      - macos-py3-arm64-build
+      - target-determination
     with:
-      build-environment: macos-10-15-py3-lite-interpreter-x86-64
-      xcode-version: "12"
-      runner-type: macos-10.15
-      build-generates-artifacts: false
-    secrets:
-      MACOS_SCCACHE_S3_ACCESS_KEY_ID: ${{ secrets.MACOS_SCCACHE_S3_ACCESS_KEY_ID }}
-      MACOS_SCCACHE_S3_SECRET_ACCESS_KEY: ${{ secrets.MACOS_SCCACHE_S3_SECRET_ACCESS_KEY }}
+      build-environment: macos-py3-arm64
+      # Same as the build job
+      python-version: 3.12.7
+      test-matrix: ${{ needs.macos-py3-arm64-build.outputs.test-matrix }}
+      disable-monitor: false
+    secrets: inherit
 
-  macos-10-15-py3-arm64:
-    name: macos-10-15-py3-arm64
-    uses: pytorch/pytorch/.github/workflows/_mac-build.yml@master
+  win-vs2022-cpu-py3-build:
+    name: win-vs2022-cpu-py3
+    uses: ./.github/workflows/_win-build.yml
+    needs: get-label-type
     with:
-      build-environment: macos-10-15-py3-arm64
-      runner-type: macos-10.15
-      build-generates-artifacts: false
-    secrets:
-      MACOS_SCCACHE_S3_ACCESS_KEY_ID: ${{ secrets.MACOS_SCCACHE_S3_ACCESS_KEY_ID }}
-      MACOS_SCCACHE_S3_SECRET_ACCESS_KEY: ${{ secrets.MACOS_SCCACHE_S3_SECRET_ACCESS_KEY }}
+      build-environment: win-vs2022-cpu-py3
+      cuda-version: cpu
+      runner: "${{ needs.get-label-type.outputs.label-type }}windows.4xlarge.nonephemeral"
+      test-matrix: |
+        { include: [
+          { config: "default", shard: 1, num_shards: 3, runner: "${{ needs.get-label-type.outputs.label-type }}windows.4xlarge.nonephemeral" },
+          { config: "default", shard: 2, num_shards: 3, runner: "${{ needs.get-label-type.outputs.label-type }}windows.4xlarge.nonephemeral" },
+          { config: "default", shard: 3, num_shards: 3, runner: "${{ needs.get-label-type.outputs.label-type }}windows.4xlarge.nonephemeral" },
+        ]}
+    secrets: inherit
+
+  win-vs2022-cpu-py3-test:
+    name: win-vs2022-cpu-py3
+    uses: ./.github/workflows/_win-test.yml
+    needs:
+      - win-vs2022-cpu-py3-build
+      - target-determination
+    with:
+      build-environment: win-vs2022-cpu-py3
+      cuda-version: cpu
+      test-matrix: ${{ needs.win-vs2022-cpu-py3-build.outputs.test-matrix }}
+      disable-monitor: false
+    secrets: inherit
+
+  win-vs2022-cuda12_6-py3-build:
+    name: win-vs2022-cuda12.6-py3
+    uses: ./.github/workflows/_win-build.yml
+    needs: get-label-type
+    with:
+      build-environment: win-vs2022-cuda12.6-py3
+      cuda-version: "12.6"
+      runner: "${{ needs.get-label-type.outputs.label-type }}windows.4xlarge.nonephemeral"
+    secrets: inherit
+
+  linux-jammy-rocm-py3_10-build:
+    if: ${{ startsWith(github.event.ref, 'refs/tags/ciflow/trunk') }}
+    name: linux-jammy-rocm-py3.10
+    uses: ./.github/workflows/_linux-build.yml
+    needs: get-label-type
+    with:
+      runner_prefix: "${{ needs.get-label-type.outputs.label-type }}"
+      build-environment: linux-jammy-rocm-py3.10
+      docker-image-name: ci-image:pytorch-linux-jammy-rocm-n-py3
+      sync-tag: rocm-build
+      test-matrix: |
+        { include: [
+          { config: "default", shard: 1, num_shards: 2, runner: "linux.rocm.gpu.gfx942.1" },
+          { config: "default", shard: 2, num_shards: 2, runner: "linux.rocm.gpu.gfx942.1" },
+          { config: "distributed", shard: 1, num_shards: 1, runner: "linux.rocm.gpu.gfx942.4" },
+        ]}
+    secrets: inherit
+
+  linux-jammy-rocm-py3_10-test:
+    if: ${{ startsWith(github.event.ref, 'refs/tags/ciflow/trunk') }}
+    permissions:
+      id-token: write
+      contents: read
+    name: linux-jammy-rocm-py3.10
+    uses: ./.github/workflows/_rocm-test.yml
+    needs:
+      - linux-jammy-rocm-py3_10-build
+      - target-determination
+    with:
+      build-environment: linux-jammy-rocm-py3.10
+      docker-image: ${{ needs.linux-jammy-rocm-py3_10-build.outputs.docker-image }}
+      test-matrix: ${{ needs.linux-jammy-rocm-py3_10-build.outputs.test-matrix }}
+      tests-to-include: "test_nn test_torch test_cuda test_ops test_unary_ufuncs test_binary_ufuncs test_autograd inductor/test_torchinductor distributed/test_c10d_common distributed/test_c10d_nccl"
+    secrets: inherit
+
+  # NB: Keep this in sync with inductor-perf-test-nightly.yml
+  linux-jammy-cuda12_8-py3_10-gcc9-inductor-build:
+    name: cuda12.8-py3.10-gcc9-sm80
+    uses: ./.github/workflows/_linux-build.yml
+    needs: get-label-type
+    with:
+      build-environment: linux-jammy-cuda12.8-py3.10-gcc9-sm80
+      docker-image-name: ci-image:pytorch-linux-jammy-cuda12.8-cudnn9-py3-gcc9-inductor-benchmarks
+      cuda-arch-list: '8.0'
+    secrets: inherit
+
+  verify-cachebench-cpu-build:
+    name: verify-cachebench-cpu-build
+    uses: ./.github/workflows/_linux-build.yml
+    needs: get-label-type
+    with:
+      runner_prefix: "${{ needs.get-label-type.outputs.label-type }}"
+      build-environment: linux-jammy-py3.9-gcc11
+      docker-image-name: ci-image:pytorch-linux-jammy-py3.9-gcc11-inductor-benchmarks
+      test-matrix: |
+        { include: [
+          { config: "verify_cachebench", shard: 1, num_shards: 1, runner: "${{ needs.get-label-type.outputs.label-type }}linux.2xlarge" },
+        ]}
+    secrets: inherit
+
+  verify-cachebench-cpu-test:
+    name: verify-cachebench-cpu-test
+    uses: ./.github/workflows/_linux-test.yml
+    needs:
+      - verify-cachebench-cpu-build
+      - target-determination
+    with:
+      build-environment: linux-jammy-py3.9-gcc11
+      docker-image: ${{ needs.verify-cachebench-cpu-build.outputs.docker-image }}
+      test-matrix: ${{ needs.verify-cachebench-cpu-build.outputs.test-matrix }}
+    secrets: inherit

@@ -1,9 +1,9 @@
 #include <ATen/core/Vitals.h>
+#include <c10/util/env.h>
 #include <cstdlib>
 #include <iostream>
 
-namespace at {
-namespace vitals {
+namespace at::vitals {
 
 APIVitals VitalsAPI;
 
@@ -32,7 +32,7 @@ TorchVitalAttr& TorchVital::create(const std::string& attr, bool force) {
   }
   auto iter = attrs.find(attr);
   if (iter == attrs.end()) {
-    auto r = attrs.emplace(std::make_pair(attr, TorchVitalAttr()));
+    auto r = attrs.emplace(attr, TorchVitalAttr());
     return r.first->second;
   }
   return iter->second;
@@ -42,9 +42,9 @@ bool torchVitalEnabled() {
   // If this is a performance hit, make `enabled` variable static
   // and return `const bool&` instead
   bool enabled = []() {
-    auto e = getenv("TORCH_VITAL");
-    if (e != nullptr) {
-      return strlen(e) > 0;
+    auto const e = c10::utils::get_env("TORCH_VITAL");
+    if (e.has_value()) {
+      return !e.value().empty();
     }
     return false;
   }();
@@ -60,7 +60,7 @@ std::string APIVitals::readVitals() {
   }
 
   std::stringstream buf;
-  for (auto x : name_map_) {
+  for (const auto& x : name_map_) {
     buf << x.second;
   }
   return buf.str();
@@ -78,8 +78,7 @@ bool APIVitals::setVital(
   auto iter = name_map_.find(vital_name);
   TorchVital* vital = nullptr;
   if (iter == name_map_.end()) {
-    auto r =
-        name_map_.emplace(std::make_pair(vital_name, TorchVital(vital_name)));
+    auto r = name_map_.emplace(vital_name, TorchVital(vital_name));
     vital = &r.first->second;
   } else {
     vital = &iter->second;
@@ -89,11 +88,10 @@ bool APIVitals::setVital(
   return true;
 }
 
-APIVitals::APIVitals() : vitals_enabled(false), name_map_() {
+APIVitals::APIVitals() : vitals_enabled(false) {
   // Set default values, force is necessary because in unit tests the env
   // variable may not be set when global APIVitals are constructed.
   setVital("CUDA", "used", "False", /* force = */ true);
 }
 
-} // namespace vitals
-} // namespace at
+} // namespace at::vitals

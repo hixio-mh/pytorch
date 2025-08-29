@@ -5,16 +5,18 @@
 
 import itertools
 import torch
-from typing import List, Any
+from typing import Any
 from functools import wraps
 import unittest
+from torch.testing._internal.common_utils import skipIfTorchDynamo
+
 
 from torch.testing._internal.common_utils import \
-    (TestCase, parametrize, suppress_warnings, _TestParametrizer)
+    (TestCase, parametrize, suppress_warnings, _TestParametrizer, run_tests)
 from torch.testing._internal.common_methods_invocations import \
     (op_db, SampleInput)
 from torch.testing._internal.common_device_type import \
-    (instantiate_device_type_tests, ops, onlyNativeDeviceTypes)
+    (instantiate_device_type_tests, ops, onlyNativeDeviceTypes, precisionOverride)
 
 
 def apply_masked_reduction_along_dim(op, input, *args, **kwargs):
@@ -55,7 +57,7 @@ def apply_masked_reduction_along_dim(op, input, *args, **kwargs):
        [[op([1, 2], *args0, **kwargs, dim=None, keepdim=False)]
         [op([3, 4, 5], *args0, **kwargs, dim=None, keepdim=False)]]
 
-      where args0 is args where dim value is replased with None if
+      where args0 is args where dim value is replaced with None if
       present.
 
       Using the same example data, if the op is called with dim=(0, 1)
@@ -96,9 +98,9 @@ def apply_masked_reduction_along_dim(op, input, *args, **kwargs):
         args0 = args
 
     # dimensions along which the reduction operation is applied:
-    dim_ = torch._masked._canonical_dim(dim, input.ndim)
+    dim_ = torch.masked._canonical_dim(dim, input.ndim)
     # slices in product(*ranges) define all elementary slices:
-    ranges: List[Any] = []
+    ranges: list[Any] = []
     # shape of output for the keepdim=True case:
     shape = []
     for i in range(input.ndim):
@@ -116,7 +118,7 @@ def apply_masked_reduction_along_dim(op, input, *args, **kwargs):
     if mask is None:
         inpmask = input.new_ones([], dtype=torch.bool).expand(input.shape)
     else:
-        inpmask = torch._masked._input_mask(input, mask=mask)
+        inpmask = torch.masked._input_mask(input, mask=mask)
     for s in itertools.product(*ranges):
         # data of an elementary slice is 1D sequence and has only
         # masked-in elements:
@@ -148,7 +150,7 @@ def apply_masked_normalization_along_dim(op, input, *args, **kwargs):
     if mask is None:
         inpmask = input.new_ones([], dtype=torch.bool).expand(input.shape)
     else:
-        inpmask = torch._masked._input_mask(input, mask=mask)
+        inpmask = torch.masked._input_mask(input, mask=mask)
     dim_ = dim % input.ndim
     left_ranges = tuple(map(range, input.shape[:dim_]))
     right_ranges = tuple(map(range, input.shape[dim_ + 1:]))
@@ -161,6 +163,7 @@ def apply_masked_normalization_along_dim(op, input, *args, **kwargs):
 reference_functions = dict(
     norm=lambda *args, **kwargs: apply_masked_reduction_along_dim(torch.linalg.vector_norm, *args, **dict(kwargs, dim_position=1)),
     var=lambda *args, **kwargs: apply_masked_reduction_along_dim(torch.var, *args, **dict(kwargs, dim_position=0)),
+    std=lambda *args, **kwargs: apply_masked_reduction_along_dim(torch.std, *args, **dict(kwargs, dim_position=0)),
     softmax=lambda *args, **kwargs: apply_masked_normalization_along_dim(torch.softmax, *args, **kwargs),
     log_softmax=lambda *args, **kwargs: apply_masked_normalization_along_dim(torch.log_softmax, *args, **kwargs),
     softmin=lambda *args, **kwargs: apply_masked_normalization_along_dim(torch.nn.functional.softmin, *args, **kwargs),
@@ -168,7 +171,7 @@ reference_functions = dict(
         torch.nn.functional.normalize, *args, **dict(kwargs, dim_position=1)),
 )
 
-masked_ops = [op for op in op_db if op.name.startswith('_masked.')]
+masked_ops = [op for op in op_db if op.name.startswith('masked.')]
 masked_ops_with_references = [op for op in masked_ops if op.name.rsplit('.', 1)[-1] in reference_functions]
 masked_ops_with_non_strided_support = [op for op in masked_ops if op.supports_sparse or op.supports_sparse_csr]
 
@@ -242,14 +245,7 @@ class mask_layouts(_TestParametrizer):
                                               kwargs=sample_input_kwargs)
                         if layout != torch.sparse_coo and op.supports_sparse:
                             sample_input_kwargs = sample_input.kwargs.copy()
-                            if mask.layout == torch.sparse_csr:
-                                # TODO: remove this if-block when sparse csr supports to_sparse
-                                mask = torch.sparse_coo_tensor(
-                                    torch._convert_indices_from_csr_to_coo(mask.crow_indices(), mask.col_indices()),
-                                    mask.values(), mask.shape)._coalesced_(True)
-                                sample_input_kwargs.update(mask=mask)
-                            else:
-                                sample_input_kwargs.update(mask=mask.to_sparse())
+                            sample_input_kwargs.update(mask=mask.to_sparse())
                             yield SampleInput(sample_input.input.clone(),
                                               args=sample_input.args,
                                               kwargs=sample_input_kwargs)
@@ -263,7 +259,7 @@ class mask_layouts(_TestParametrizer):
             test(self, layout, device, dtype, op, sample_inputs_generator())
 
         for layout in (torch.strided, torch.sparse_coo, torch.sparse_csr):
-            yield (wrap, str(layout).lstrip('torch.'), {'layout': layout})
+            yield (wrap, str(layout).lstrip('torch.'), {'layout': layout}, lambda _: [])
 
 
 class TestMasked(TestCase):
@@ -278,27 +274,29 @@ class TestMasked(TestCase):
     @onlyNativeDeviceTypes
     @suppress_warnings
     @ops(masked_ops_with_references)
+    @precisionOverride({torch.bfloat16: 5e-4, torch.float16: 5e-4})
     def test_reference_masked(self, device, dtype, op):
         op_name = op.name.rsplit('.', 1)[-1]
         ref_op = reference_functions[op_name]
         sample_inputs = op.sample_inputs(device, dtype)
         for sample_input in sample_inputs:
             t_inp, t_args, t_kwargs = sample_input.input, sample_input.args, sample_input.kwargs
-            if op_name == 'var' and not (t_inp.dtype.is_floating_point or t_inp.dtype.is_complex):
-                # torch.var does not support integer inputs
+            if op_name in {'var', 'std'} and not (t_inp.dtype.is_floating_point or t_inp.dtype.is_complex):
+                # torch.var/torch.std does not support integer inputs
                 continue
             actual = op.op(t_inp, *t_args, **t_kwargs)
             expected = ref_op(t_inp, *t_args, **t_kwargs)
             if t_kwargs.get('mask') is None:
                 outmask = None
             else:
-                outmask = torch._masked._output_mask(op.op, t_inp, *t_args, **t_kwargs)
+                outmask = torch.masked._output_mask(op.op, t_inp, *t_args, **t_kwargs)
             self.assertEqualMasked(actual, expected, outmask)
 
     @mask_layouts()
     @onlyNativeDeviceTypes
     @suppress_warnings
     @ops(masked_ops_with_non_strided_support)
+    @precisionOverride({torch.bfloat16: 5e-3, torch.float16: 5e-3})
     def test_mask_layout(self, layout, device, dtype, op, sample_inputs):
         for sample in sample_inputs:
             t_inp, t_args, t_kwargs = sample.input, sample.args, sample.kwargs
@@ -313,10 +311,11 @@ class TestMasked(TestCase):
             if r_kwargs.get('mask') is None:
                 outmask = None
             else:
-                outmask = torch._masked._output_mask(op.op, r_inp, *r_args, **r_kwargs)
+                outmask = torch.masked._output_mask(op.op, r_inp, *r_args, **r_kwargs)
             expected = op.op(r_inp, *r_args, **r_kwargs)
             self.assertEqualMasked(actual, expected, outmask)
 
+    @skipIfTorchDynamo("https://github.com/pytorch/torchdynamo/issues/1992")
     @parametrize("sparse_kind,fill_value", [('coo', 0), ('hybrid_coo', 0),
                                             ('coo', 123), ('hybrid_coo', 123),
                                             ('csr', 0), ('csr', 123)],
@@ -396,8 +395,9 @@ class TestMasked(TestCase):
                             [Z, 11, F, F, F]])
         tmp = to_sparse(tmp)
 
-        sparse = torch._masked._where(mask, input,
-                                      torch.tensor(fill_value, dtype=input.dtype, device=input.device))
+
+        sparse = torch.masked._where(mask, input,
+                                     torch.tensor(fill_value, dtype=input.dtype, device=input.device))
 
         if tmp.layout == torch.sparse_coo:
             expected_sparse = torch.sparse_coo_tensor(
@@ -430,3 +430,6 @@ class TestMasked(TestCase):
 
 
 instantiate_device_type_tests(TestMasked, globals(), except_for='meta')
+
+if __name__ == "__main__":
+    run_tests()

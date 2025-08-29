@@ -6,47 +6,7 @@ torch.Tensor
 ===================================
 
 A :class:`torch.Tensor` is a multi-dimensional matrix containing elements of
-a single data type.
-
-
-Data types
-----------
-
-Torch defines 10 tensor types with CPU and GPU variants which are as follows:
-
-======================================= =========================================== ============================= ================================
-Data type                               dtype                                       CPU tensor                    GPU tensor
-======================================= =========================================== ============================= ================================
-32-bit floating point                   ``torch.float32`` or ``torch.float``        :class:`torch.FloatTensor`    :class:`torch.cuda.FloatTensor`
-64-bit floating point                   ``torch.float64`` or ``torch.double``       :class:`torch.DoubleTensor`   :class:`torch.cuda.DoubleTensor`
-16-bit floating point [1]_              ``torch.float16`` or ``torch.half``         :class:`torch.HalfTensor`     :class:`torch.cuda.HalfTensor`
-16-bit floating point [2]_              ``torch.bfloat16``                          :class:`torch.BFloat16Tensor` :class:`torch.cuda.BFloat16Tensor`
-32-bit complex                          ``torch.complex32``
-64-bit complex                          ``torch.complex64``
-128-bit complex                         ``torch.complex128`` or ``torch.cdouble``
-8-bit integer (unsigned)                ``torch.uint8``                             :class:`torch.ByteTensor`     :class:`torch.cuda.ByteTensor`
-8-bit integer (signed)                  ``torch.int8``                              :class:`torch.CharTensor`     :class:`torch.cuda.CharTensor`
-16-bit integer (signed)                 ``torch.int16`` or ``torch.short``          :class:`torch.ShortTensor`    :class:`torch.cuda.ShortTensor`
-32-bit integer (signed)                 ``torch.int32`` or ``torch.int``            :class:`torch.IntTensor`      :class:`torch.cuda.IntTensor`
-64-bit integer (signed)                 ``torch.int64`` or ``torch.long``           :class:`torch.LongTensor`     :class:`torch.cuda.LongTensor`
-Boolean                                 ``torch.bool``                              :class:`torch.BoolTensor`     :class:`torch.cuda.BoolTensor`
-quantized 8-bit integer (unsigned)      ``torch.quint8``                            :class:`torch.ByteTensor`     /
-quantized 8-bit integer (signed)        ``torch.qint8``                             :class:`torch.CharTensor`     /
-quantized 32-bit integer (signed)       ``torch.qint32``                            :class:`torch.IntTensor`      /
-quantized 4-bit integer (unsigned) [3]_ ``torch.quint4x2``                          :class:`torch.ByteTensor`     /
-======================================= =========================================== ============================= ================================
-
-.. [1]
-  Sometimes referred to as binary16: uses 1 sign, 5 exponent, and 10
-  significand bits. Useful when precision is important at the expense of range.
-.. [2]
-  Sometimes referred to as Brain Floating Point: uses 1 sign, 8 exponent, and 7
-  significand bits. Useful when range is important, since it has the same
-  number of exponent bits as ``float32``
-.. [3]
-  quantized 4-bit integer is stored as a 8-bit signed integer. Currently it's only supported in EmbeddingBag operator.
-
-:class:`torch.Tensor` is an alias for the default tensor type (:class:`torch.FloatTensor`).
+a single data type. Please see :ref:`dtype-doc` for more details about dtype support.
 
 Initializing and basic operations
 ---------------------------------
@@ -175,6 +135,37 @@ Tensor class reference
      (see :ref:`tensor-creation-ops`).
    - To create a tensor with similar type but different size as another tensor,
      use ``tensor.new_*`` creation ops.
+   - There is a legacy constructor ``torch.Tensor`` whose use is discouraged.
+     Use :func:`torch.tensor` instead.
+
+.. method:: Tensor.__init__(self, data)
+
+   This constructor is deprecated, we recommend using :func:`torch.tensor` instead.
+   What this constructor does depends on the type of ``data``.
+
+   * If ``data`` is a Tensor, returns an alias to the original Tensor.  Unlike
+     :func:`torch.tensor`, this tracks autograd and will propagate gradients to
+     the original Tensor.  ``device`` kwarg is not supported for this ``data`` type.
+
+   * If ``data`` is a sequence or nested sequence, create a tensor of the default
+     dtype (typically ``torch.float32``) whose data is the values in the
+     sequences, performing coercions if necessary.  Notably, this differs from
+     :func:`torch.tensor` in that this constructor will always construct a float
+     tensor, even if the inputs are all integers.
+
+   * If ``data`` is a :class:`torch.Size`, returns an empty tensor of that size.
+
+   This constructor does not support explicitly specifying ``dtype`` or ``device`` of
+   the returned tensor.  We recommend using :func:`torch.tensor` which provides this
+   functionality.
+
+   Args:
+       data (array_like): The tensor to construct from.
+
+   Keyword args:
+       device (:class:`torch.device`, optional): the desired device of returned tensor.
+           Default: if None, same :class:`torch.device` as this tensor.
+
 
 .. autoattribute:: Tensor.T
 .. autoattribute:: Tensor.H
@@ -199,6 +190,8 @@ Tensor class reference
     Tensor.ndim
     Tensor.real
     Tensor.imag
+    Tensor.nbytes
+    Tensor.itemsize
 
     Tensor.abs
     Tensor.abs_
@@ -315,6 +308,9 @@ Tensor class reference
     Tensor.cumprod_
     Tensor.cumsum
     Tensor.cumsum_
+    Tensor.chalf
+    Tensor.cfloat
+    Tensor.cdouble
     Tensor.data_ptr
     Tensor.deg2rad
     Tensor.dequantize
@@ -334,6 +330,7 @@ Tensor class reference
     Tensor.digamma
     Tensor.digamma_
     Tensor.dim
+    Tensor.dim_order
     Tensor.dist
     Tensor.div
     Tensor.div_
@@ -342,7 +339,6 @@ Tensor class reference
     Tensor.dot
     Tensor.double
     Tensor.dsplit
-    Tensor.eig
     Tensor.element_size
     Tensor.eq
     Tensor.eq_
@@ -416,6 +412,8 @@ Tensor class reference
     Tensor.index_fill
     Tensor.index_put_
     Tensor.index_put
+    Tensor.index_reduce_
+    Tensor.index_reduce
     Tensor.index_select
     Tensor.indices
     Tensor.inner
@@ -479,7 +477,6 @@ Tensor class reference
     Tensor.logit
     Tensor.logit_
     Tensor.long
-    Tensor.lstsq
     Tensor.lt
     Tensor.lt_
     Tensor.less
@@ -499,6 +496,7 @@ Tensor class reference
     Tensor.max
     Tensor.maximum
     Tensor.mean
+    Tensor.module_load
     Tensor.nanmean
     Tensor.median
     Tensor.nanmedian
@@ -569,6 +567,7 @@ Tensor class reference
     Tensor.reciprocal_
     Tensor.record_stream
     Tensor.register_hook
+    Tensor.register_post_accumulate_grad_hook
     Tensor.remainder
     Tensor.remainder_
     Tensor.renorm
@@ -593,6 +592,7 @@ Tensor class reference
     Tensor.scatter_
     Tensor.scatter_add_
     Tensor.scatter_add
+    Tensor.scatter_reduce_
     Tensor.scatter_reduce
     Tensor.select
     Tensor.select_scatter
@@ -616,10 +616,11 @@ Tensor class reference
     Tensor.asinh_
     Tensor.arcsinh
     Tensor.arcsinh_
+    Tensor.shape
     Tensor.size
     Tensor.slogdet
     Tensor.slice_scatter
-    Tensor.solve
+    Tensor.softmax
     Tensor.sort
     Tensor.split
     Tensor.sparse_mask
@@ -633,6 +634,7 @@ Tensor class reference
     Tensor.std
     Tensor.stft
     Tensor.storage
+    Tensor.untyped_storage
     Tensor.storage_offset
     Tensor.storage_type
     Tensor.stride
@@ -645,7 +647,6 @@ Tensor class reference
     Tensor.svd
     Tensor.swapaxes
     Tensor.swapdims
-    Tensor.symeig
     Tensor.t
     Tensor.t_
     Tensor.tensor_split
@@ -664,7 +665,12 @@ Tensor class reference
     Tensor.arctanh_
     Tensor.tolist
     Tensor.topk
+    Tensor.to_dense
     Tensor.to_sparse
+    Tensor.to_sparse_csr
+    Tensor.to_sparse_csc
+    Tensor.to_sparse_bsr
+    Tensor.to_sparse_bsc
     Tensor.trace
     Tensor.transpose
     Tensor.transpose_
@@ -680,6 +686,7 @@ Tensor class reference
     Tensor.type
     Tensor.type_as
     Tensor.unbind
+    Tensor.unflatten
     Tensor.unfold
     Tensor.uniform_
     Tensor.unique
@@ -695,4 +702,5 @@ Tensor class reference
     Tensor.where
     Tensor.xlogy
     Tensor.xlogy_
+    Tensor.xpu
     Tensor.zero_

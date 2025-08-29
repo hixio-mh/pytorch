@@ -6,9 +6,6 @@ import torch
 
 
 class PointwiseOpsModule(torch.nn.Module):
-    def __init__(self):
-        super(PointwiseOpsModule, self).__init__()
-
     def forward(self):
         return self.pointwise_ops()
 
@@ -22,7 +19,7 @@ class PointwiseOpsModule(torch.nn.Module):
         f = torch.zeros(3)
         g = torch.tensor([-1, 0, 1])
         w = torch.tensor([0.3810, 1.2774, -0.2972, -0.3719, 0.4637])
-        return (
+        return len(
             torch.abs(torch.tensor([-1, -2, 3])),
             torch.absolute(torch.tensor([-1, -2, 3])),
             torch.acos(a),
@@ -212,9 +209,6 @@ class PointwiseOpsModule(torch.nn.Module):
 
 
 class ReductionOpsModule(torch.nn.Module):
-    def __init__(self):
-        super(ReductionOpsModule, self).__init__()
-
     def forward(self):
         return self.reduction_ops()
 
@@ -222,7 +216,7 @@ class ReductionOpsModule(torch.nn.Module):
         a = torch.randn(4)
         b = torch.randn(4)
         c = torch.tensor(0.5)
-        return (
+        return len(
             torch.argmax(a),
             torch.argmin(a),
             torch.amax(a),
@@ -265,13 +259,10 @@ class ReductionOpsModule(torch.nn.Module):
 
 
 class ComparisonOpsModule(torch.nn.Module):
-    def __init__(self):
-        super(ComparisonOpsModule, self).__init__()
-
     def forward(self):
         a = torch.tensor(0)
         b = torch.tensor(1)
-        return (
+        return len(
             torch.allclose(a, b),
             torch.argsort(a),
             torch.eq(a, b),
@@ -313,9 +304,6 @@ class ComparisonOpsModule(torch.nn.Module):
 
 
 class OtherMathOpsModule(torch.nn.Module):
-    def __init__(self):
-        super(OtherMathOpsModule, self).__init__()
-
     def forward(self):
         return self.other_ops()
 
@@ -325,9 +313,8 @@ class OtherMathOpsModule(torch.nn.Module):
         c = torch.randint(0, 8, (5,), dtype=torch.int64)
         e = torch.randn(4, 3)
         f = torch.randn(4, 4, 4)
-        size = [0, 1]
         dims = [0, 1]
-        return (
+        return len(
             torch.atleast_1d(a),
             torch.atleast_2d(a),
             torch.atleast_3d(a),
@@ -380,23 +367,20 @@ class OtherMathOpsModule(torch.nn.Module):
             torch.triu_indices(3, 3),
             torch.vander(a),
             torch.view_as_real(torch.randn(4, dtype=torch.cfloat)),
-            torch.view_as_complex(torch.randn(4, 2)),
+            torch.view_as_complex(torch.randn(4, 2)).real,
             torch.resolve_conj(a),
             torch.resolve_neg(a),
         )
 
 
 class SpectralOpsModule(torch.nn.Module):
-    def __init__(self):
-        super(SpectralOpsModule, self).__init__()
-
     def forward(self):
         return self.spectral_ops()
 
     def spectral_ops(self):
         a = torch.randn(10)
         b = torch.randn(10, 8, 4, 2)
-        return (
+        return len(
             torch.stft(a, 8),
             torch.stft(a, torch.tensor(8)),
             torch.istft(b, 8),
@@ -409,9 +393,6 @@ class SpectralOpsModule(torch.nn.Module):
 
 
 class BlasLapackOpsModule(torch.nn.Module):
-    def __init__(self):
-        super(BlasLapackOpsModule, self).__init__()
-
     def forward(self):
         return self.blas_lapack_ops()
 
@@ -420,7 +401,7 @@ class BlasLapackOpsModule(torch.nn.Module):
         a = torch.randn(10, 3, 4)
         b = torch.randn(10, 4, 3)
         v = torch.randn(3)
-        return (
+        return len(
             torch.addbmm(m, a, b),
             torch.addmm(torch.randn(2, 3), torch.randn(2, 3), torch.randn(3, 3)),
             torch.addmv(torch.randn(2), torch.randn(2, 3), torch.randn(3)),
@@ -441,9 +422,9 @@ class BlasLapackOpsModule(torch.nn.Module):
             # torch.logdet(m),
             # torch.slogdet(m),
             # torch.lstsq(m, m),
-            # torch.lu(m),
-            # torch.lu_solve(m, *torch.lu(m)),
-            # torch.lu_unpack(*torch.lu(m)),
+            # torch.linalg.lu_factor(m),
+            # torch.lu_solve(m, *torch.linalg.lu_factor(m)),
+            # torch.lu_unpack(*torch.linalg.lu_factor(m)),
             torch.matmul(m, m),
             torch.matrix_power(m, 2),
             # torch.matrix_rank(m),

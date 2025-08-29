@@ -2,9 +2,6 @@ import torch
 
 
 class TensorOpsModule(torch.nn.Module):
-    def __init__(self):
-        super(TensorOpsModule, self).__init__()
-
     def forward(self):
         return self.tensor_general_ops()
 
@@ -15,7 +12,7 @@ class TensorOpsModule(torch.nn.Module):
         c = torch.randn(4, dtype=torch.cfloat)
         w = torch.rand(4, 4, 4, 4)
         v = torch.rand(4, 4, 4, 4)
-        return (
+        return len(
             # torch.is_tensor(a),
             # torch.is_storage(a),
             torch.is_complex(a),
@@ -51,7 +48,7 @@ class TensorOpsModule(torch.nn.Module):
             x.cpu(),
             # x.cuda(),
             # x.data_ptr(),
-            # x.dense_dim(),
+            x.dense_dim(),
             w.fill_diagonal_(0),
             w.element_size(),
             w.exponential_(),
@@ -68,6 +65,8 @@ class TensorOpsModule(torch.nn.Module):
             w.is_pinned(),
             w.is_set_to(w),
             # w.is_shared,
+            w.is_coalesced(),
+            w.coalesce(),
             w.is_signed(),
             w.is_sparse,
             torch.tensor([1]).item(),
@@ -100,15 +99,11 @@ class TensorOpsModule(torch.nn.Module):
 
 
 class TensorCreationOpsModule(torch.nn.Module):
-    def __init__(self):
-        super(TensorCreationOpsModule, self).__init__()
-
     def forward(self):
         return self.tensor_creation_ops()
 
     def tensor_creation_ops(self):
         i = torch.tensor([[0, 1, 1], [2, 0, 2]])
-        v = torch.tensor([3, 4, 5], dtype=torch.float32)
         real = torch.tensor([1, 2], dtype=torch.float32)
         imag = torch.tensor([3, 4], dtype=torch.float32)
         inp = torch.tensor([-1.5, 0.0, 2.0])
@@ -120,7 +115,7 @@ class TensorCreationOpsModule(torch.nn.Module):
             0,
             torch.quint8,
         )
-        return (
+        return len(
             torch.tensor([[0.1, 1.2], [2.2, 3.1], [4.9, 5.2]]),
             # torch.sparse_coo_tensor(i, v, [2, 3]), # not work for iOS
             torch.as_tensor([1, 2, 3]),
@@ -159,9 +154,6 @@ class TensorCreationOpsModule(torch.nn.Module):
 
 
 class TensorIndexingOpsModule(torch.nn.Module):
-    def __init__(self):
-        super(TensorIndexingOpsModule, self).__init__()
-
     def forward(self):
         return self.tensor_indexing_ops()
 
@@ -171,7 +163,7 @@ class TensorIndexingOpsModule(torch.nn.Module):
         t = torch.tensor([[0, 0], [1, 0]])
         mask = x.ge(0.5)
         i = [0, 1]
-        return (
+        return len(
             torch.cat((x, x, x), 0),
             torch.concat((x, x, x), 0),
             torch.conj(x),
@@ -225,15 +217,12 @@ class TensorIndexingOpsModule(torch.nn.Module):
 
 
 class TensorTypingOpsModule(torch.nn.Module):
-    def __init__(self):
-        super(TensorTypingOpsModule, self).__init__()
-
     def forward(self):
         return self.tensor_typing_ops()
 
     def tensor_typing_ops(self):
         x = torch.randn(1, 3, 4, 4)
-        return (
+        return len(
             x.to(torch.float),
             x.to(torch.double),
             x.to(torch.cfloat),
@@ -253,16 +242,13 @@ class TensorTypingOpsModule(torch.nn.Module):
 
 
 class TensorViewOpsModule(torch.nn.Module):
-    def __init__(self):
-        super(TensorViewOpsModule, self).__init__()
-
     def forward(self):
         return self.tensor_view_ops()
 
     def tensor_view_ops(self):
         x = torch.randn(4, 4, 1)
         y = torch.randn(4, 4, 2)
-        return (
+        return len(
             x[0, 2:],
             x.detach(),
             x.detach_(),
